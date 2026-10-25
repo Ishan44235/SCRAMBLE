@@ -253,9 +253,61 @@ function fightTick() {
   $('fClock').textContent = fmt(left);
 }
 
+/**
+ * Cockpit minimap: every jet as a blip, yours green and pointed, enemies
+ * red. Coarse by design — it tells you where the fight is, not how to aim.
+ */
+function drawMinimap(blips, arena) {
+  const cv = $('fMinimap');
+  if (!cv || !blips) return;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== w * dpr) { cv.width = w * dpr; cv.height = h * dpr; }
+  const c = cv.getContext('2d');
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.clearRect(0, 0, w, h);
+
+  // arena is sent divided by 16 on the server side
+  const AW = (arena ? arena[0] : 1600) / 16;
+  const AH = (arena ? arena[1] : 900) / 16;
+  const sx = w / AW, sy = h / AH;
+
+  c.strokeStyle = 'rgba(48,163,108,.18)';
+  c.lineWidth = 1;
+  for (let i = 1; i < 4; i++) {
+    c.beginPath(); c.moveTo((w / 4) * i, 0); c.lineTo((w / 4) * i, h); c.stroke();
+  }
+  c.beginPath(); c.moveTo(0, h / 2); c.lineTo(w, h / 2); c.stroke();
+
+  blips.forEach(b => {
+    const x = b.x * sx, y = b.y * sy;
+    const mine = b.p === STATE.pid;
+    if (!b.a) {
+      c.fillStyle = 'rgba(120,130,155,.45)';
+      c.fillRect(x - 1.5, y - 1.5, 3, 3);
+      return;
+    }
+    if (mine) {
+      // yours is an arrow so you can read your own heading at a glance
+      c.save();
+      c.translate(x, y);
+      c.rotate((b.h * 15 + 90) * Math.PI / 180);
+      c.fillStyle = '#6ef0a8';
+      c.beginPath();
+      c.moveTo(0, -5); c.lineTo(3.5, 4); c.lineTo(-3.5, 4);
+      c.closePath(); c.fill();
+      c.restore();
+    } else {
+      c.fillStyle = '#ff6b70';
+      c.fillRect(x - 2, y - 2, 4, 4);
+    }
+  });
+}
+
 /** Server tells us how our own jet is doing. */
 function fightMe(m) {
   const me = m.me;
+  drawMinimap(m.blips, m.arena);
   FIGHT.missiles = me.missiles;
   FIGHT.endsAt = performance.now() + m.left * 1000;
 
@@ -337,4 +389,83 @@ function wireFightControls() {
   };
   $('fMissile').addEventListener('touchstart', fire, { passive: false });
   $('fMissile').addEventListener('click', fire);
+}
+
+/* ============================================================
+   Live crates — parts that arrive ticking.
+
+   A part that isn't an outright upgrade lands in your hands with a
+   10-second fuse. CLAIM it at its current tier, or SHOVE it at
+   somebody else: that bumps its tier but does NOT reset the fuse, so
+   the better it gets the closer it is to going off.
+   ============================================================ */
+
+const HOT = { crates: [], shoving: null };
+
+function renderHot() {
+  const bar = document.getElementById('hotbar');
+  if (!bar) return;
+  if (!HOT.crates.length) { bar.innerHTML = ''; return; }
+
+  bar.innerHTML = HOT.crates.map(c => {
+    const col = TIER_COLOR[c.tier] || TIER_COLOR.empty;
+    const pct = Math.max(0, Math.min(1, c.left / 10)) * 100;
+    const urgent = c.left <= 3.5;
+    return `<div class="hot${urgent ? ' urgent' : ''}" data-cid="${c.cid}"
+                 style="border-bottom-color:${col}">
+      <span class="hot-passes">${c.passes ? '×' + c.passes : ''}</span>
+      <div class="hot-top">
+        ${partIconSVG(c.slot, c.tier, 22)}
+        <div>
+          <div class="hot-name">${c.name}</div>
+          <div class="hot-tier" style="color:${col}">${TIER_LABEL[c.tier]}</div>
+        </div>
+      </div>
+      <div class="hot-fuse"><i style="width:${pct}%"></i></div>
+      <div class="hot-acts">
+        <button class="claim" data-a="claim">CLAIM</button>
+        <button class="shove" data-a="shove">SHOVE</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  bar.querySelectorAll('.hot').forEach(el => {
+    const cid = +el.dataset.cid;
+    el.querySelectorAll('button').forEach(b => {
+      b.onclick = e => {
+        e.preventDefault();
+        if (b.dataset.a === 'claim') {
+          send({ t: 'claim_hot', cid });
+          haptic(22);
+        } else {
+          armShove(cid);
+        }
+      };
+    });
+  });
+}
+
+/** Server pushes the full list whenever it changes. */
+function hotUpdate(m) {
+  HOT.crates = m.crates || [];
+  renderHot();
+}
+
+/** Burn the fuses down locally between server pushes. */
+function hotTick(dt) {
+  if (!HOT.crates.length) return;
+  let redraw = false;
+  HOT.crates.forEach(c => {
+    const was = c.left;
+    c.left = Math.max(0, c.left - dt);
+    if (Math.ceil(was * 2) !== Math.ceil(c.left * 2)) redraw = true;
+  });
+  if (redraw) renderHot();
+}
+
+function hotBlew(m) {
+  if (m.loadout) { FIGHT.loadout = m.loadout.parts; renderJetStrip(); }
+  toast(m.lost ? `CRATE BLEW — LOST ${m.lost.name}` : 'CRATE BLEW — NOTHING TO LOSE',
+        'bad');
+  haptic([50, 70, 50]);
 }

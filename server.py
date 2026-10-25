@@ -1,5 +1,5 @@
 """
-MERGE CONFLICT AT MACH 2 — server
+SCRAMBLE — server
 
 A retro pixel arcade party game for phones in one room.
 
@@ -105,6 +105,16 @@ QUARTERMASTER_PER_PART = 40
 FEATHERWEIGHT_BONUS = 200
 FEATHERWEIGHT_MAX_SLOTS = 3
 THREAT_BOUNTY = 3
+
+STREAK_FOR_STRIKE = 3    # correct answers in a row earns a missile
+STREAK_FOR_RINGS = 3     # wrong answers in a row sends you through the rings
+RING_COOLDOWN = 40.0     # ...but no more than one ring run per this often
+
+# Loose parts are live hand grenades. A part that is not an outright upgrade
+# lands in your hands ticking; you either CLAIM it as-is or shove it at
+# somebody else, which bumps its tier but does not reset the fuse.
+HOT_FUSE_SECONDS = 10.0
+HOT_PER_PLAYER = 3       # cap on live crates = players * this
 
 AGENDAS = {
     "magpie": {
@@ -243,6 +253,11 @@ class Player:
 
     correct: int = 0
     score: int = 0
+    streak_ok: int = 0          # correct answers in a row
+    streak_bad: int = 0         # wrong answers in a row
+    strikes: int = 0            # missile strikes earned, unspent
+    minigame: str = ""          # "dodge" | "rings" while one is running
+    last_rings: float = 0.0     # so the ring run cannot spam a cold player
     passes_made: int = 0
     public_passes: int = 0
     passes_taken: int = 0
@@ -281,6 +296,8 @@ class Room:
     fight_standings: List[dict] = field(default_factory=list)
     threat: str = ""
     reveal: dict = field(default_factory=dict)
+    hot: Dict[int, dict] = field(default_factory=dict)   # live ticking crates
+    next_hot: int = 1
     task: Optional[asyncio.Task] = None
     touched: float = field(default_factory=time.time)
 
@@ -358,6 +375,7 @@ async def push_state(r: Room):
         "rounds": r.s("rounds"),
         "code": r.code,
         "players": r.roster(),
+        "ring": seating(r),
         "endsIn": max(0, round(r.phase_ends - time.time())) if r.phase_ends else 0,
         "settings": r.settings or _defaults(),
         "accuracy": round(r.quiz.accuracy(), 3) if r.quiz else None,
@@ -405,6 +423,8 @@ async def reset_to_lobby(r: Room):
     r.fight = None
     r.fight_standings = []
     r.quiz = None
+    r.hot = {}
+    r.next_hot = 1
 
     for p in r.players.values():
         p.agenda = ""
@@ -464,6 +484,8 @@ async def start_game(r: Room, fill: bool = False,
             duel.rival = random.choice(others).pid
 
     r.quiz = quizmod.QuizEngine()
+    r.hot = {}
+    r.next_hot = 1
     r.phase = "calling"
     r.round_no = 0
     r.votes.clear()
@@ -549,6 +571,7 @@ async def run_match(r: Room):
                                         "next": round(max(0, nxt), 1),
                                         "gap": round(gap, 1),
                                         "remaining": len(schedule) - drawn})
+                await tick_hot(r)
                 for pid, _ in r.quiz.expired(now):
                     p = r.players.get(pid)
                     if p:
@@ -648,12 +671,9 @@ async def bot_turn(r: Room):
     if not bots or not r.quiz:
         return
     sender = random.choice(bots)
-    targets = [p for p in r.alive_players() if p.pid != sender.pid]
-    if not targets:
+    target = neighbour(r, sender, random.choice(["left", "right"]))
+    if target is None or target.pid == sender.pid:
         return
-    humans = [p for p in targets if not p.is_bot]
-    target = random.choice(humans) if humans and random.random() < 0.75 \
-        else random.choice(targets)
 
     inst = r.quiz.live.get(sender.pid) or r.quiz.issue(sender.pid)
     r.quiz.take(sender.pid)
@@ -664,8 +684,10 @@ async def bot_turn(r: Room):
     landed = r.quiz.hand_to(inst, target.pid, sender.pid, sender.name)
     if landed is not None:
         await send(target.ws, {"t": "question", **landed.public(), "passed": True})
-    await broadcast_hosts(r, {"t": "pass_fx", "from": sender.name,
-                              "to": target.name, "heat": inst.heat})
+    await broadcast_hosts(r, {"t": "pass_fx", "fromPid": sender.pid,
+                              "toPid": target.pid, "from": sender.name,
+                              "to": target.name, "heat": inst.heat,
+                              "kind": "question"})
 
 
 async def bot_votes(r: Room):
@@ -692,6 +714,11 @@ async def resolve_answer(r: Room, p: Player, choice: int,
     p.score += res["points"]
     if res["correct"]:
         p.correct += 1
+        p.streak_ok += 1
+        p.streak_bad = 0
+    else:
+        p.streak_bad += 1
+        p.streak_ok = 0
 
     if p.loadout is None:
         p.loadout = partsmod.Loadout()
@@ -709,7 +736,15 @@ async def resolve_answer(r: Room, p: Player, choice: int,
 
     await send(p.ws, {"t": "answer_result", **res})
     if award:
-        await send(p.ws, {"t": "part", **award, "loadout": p.loadout.public()})
+        if award.get("fitted"):
+            await send(p.ws, {"t": "part", **award, "loadout": p.loadout.public()})
+            await broadcast_hosts(r, {
+                "t": "earn_fx", "pid": p.pid, "name": p.name,
+                "part": award["part"]["name"], "tier": award["part"]["tier"],
+                "slot": award["part"]["slot"], "upgrade": award.get("upgrade", False)})
+        else:
+            # not an upgrade — it lands in your hands, ticking
+            await spawn_hot(r, p, partsmod.hot_from_public(award["part"]))
         if award.get("fitted"):
             last = r.quiz.last_received.get(p.pid)
             if last and last.from_pid and last.from_pid != p.pid:
@@ -724,10 +759,241 @@ async def resolve_answer(r: Room, p: Player, choice: int,
         "accuracy": round(r.quiz.accuracy(), 3),
     })
 
-    if r.phase == "round" and p.alive:
+    # A hot streak earns a missile; a cold one puts you in the rings.
+    if r.phase == "round" and not p.minigame:
+        if p.streak_bad >= STREAK_FOR_RINGS:
+            p.streak_bad = 0
+            # A bad run shouldn't mean a ring course every ten seconds —
+            # that stops being a penalty and starts being the whole game.
+            if time.time() - p.last_rings >= RING_COOLDOWN:
+                p.last_rings = time.time()
+                await start_minigame(r, p, "rings")
+                return
+        if p.streak_ok >= STREAK_FOR_STRIKE:
+            p.streak_ok = 0
+            p.strikes += 1
+            await send(p.ws, {"t": "strike_ready", "n": p.strikes})
+
+    if r.phase == "round" and p.alive and not p.minigame:
         was_queued = bool(r.quiz.queued.get(p.pid))
         inst = r.quiz.issue(p.pid)
         await send(p.ws, {"t": "question", **inst.public(), "passed": was_queued})
+
+
+# ---------------------------------------------------------------------------
+# HOT CRATES — the ticking part economy
+# ---------------------------------------------------------------------------
+
+def hot_public(c: dict, now: float) -> dict:
+    return {
+        "cid": c["cid"], "slot": c["slot"], "tier": c["tier"],
+        "name": c["name"], "passes": c["passes"],
+        "left": round(max(0.0, c["deadline"] - now), 1),
+        "from": c.get("from_name"),
+    }
+
+
+async def push_hot(r: Room, p: Player):
+    now = time.time()
+    mine = [hot_public(c, now) for c in r.hot.values() if c["holder"] == p.pid]
+    mine.sort(key=lambda c: c["left"])
+    await send(p.ws, {"t": "hot", "crates": mine})
+
+
+async def spawn_hot(r: Room, p: Player, part: dict):
+    """A part that wasn't an upgrade arrives live, with the fuse already lit."""
+    now = time.time()
+
+    # Cap the clutter. Over the cap, the oldest crate in the room is defused
+    # and quietly discarded — better than three screens of ticking boxes.
+    cap = max(3, len([q for q in r.players.values() if q.joined]) * HOT_PER_PLAYER)
+    while len(r.hot) >= cap:
+        oldest = min(r.hot.values(), key=lambda c: c["born"])
+        r.hot.pop(oldest["cid"], None)
+        holder = r.players.get(oldest["holder"])
+        if holder:
+            await send(holder.ws, {"t": "toast", "kind": "warn",
+                                   "text": "SCRAPYARD FULL — OLDEST CRATE BINNED"})
+            await push_hot(r, holder)
+
+    cid = r.next_hot
+    r.next_hot += 1
+    r.hot[cid] = {
+        "cid": cid, "slot": part["slot"], "tier": part["tier"],
+        "name": part["name"], "holder": p.pid, "passes": 0,
+        "born": now, "deadline": now + HOT_FUSE_SECONDS, "from_name": None,
+    }
+    await push_hot(r, p)
+
+
+def hot_part(c: dict) -> dict:
+    """Rebuild a real part from a crate's current slot and tier."""
+    base = next(x for x in partsmod.CATALOG[c["slot"]] if x["tier"] == c["tier"])
+    return dict(base, slot=c["slot"], faulty=False)
+
+
+async def claim_hot(r: Room, p: Player, cid: int):
+    """Take the part as it stands. Defuses the crate."""
+    c = r.hot.get(cid)
+    if not c or c["holder"] != p.pid:
+        return
+    r.hot.pop(cid, None)
+    p.loadout = p.loadout or partsmod.Loadout()
+    award = p.loadout.award(hot_part(c))
+    await send(p.ws, {"t": "part", **award, "loadout": p.loadout.public()})
+    await push_hot(r, p)
+
+
+async def pass_hot(r: Room, p: Player, cid: int, target_pid: str,
+                   direction: str = ""):
+    """
+    Shove it at someone else. The crate gains a tier on the way — but the
+    fuse keeps burning, so the better it gets the more dangerous it is.
+    """
+    c = r.hot.get(cid)
+    if not c or c["holder"] != p.pid:
+        return
+    target = neighbour(r, p, direction) if direction else r.players.get(target_pid)
+    if not target or target.pid == p.pid or not target.joined or not target.alive:
+        return
+
+    rank = partsmod.TIER_RANK[c["tier"]]
+    if rank < len(partsmod.TIERS) - 1:
+        c["tier"] = partsmod.TIERS[rank + 1]
+    c["name"] = next(x for x in partsmod.CATALOG[c["slot"]]
+                     if x["tier"] == c["tier"])["name"]
+    c["holder"] = target.pid
+    c["passes"] += 1
+    c["from_name"] = p.name
+
+    p.passes_made += 1
+    p.public_passes += 1
+    target.passes_taken += 1
+
+    await push_hot(r, p)
+    await push_hot(r, target)
+    await send(target.ws, {"t": "toast", "kind": "bad",
+                           "text": "LIVE CRATE FROM " + p.name})
+    await broadcast_hosts(r, {"t": "pass_fx", "fromPid": p.pid,
+                              "toPid": target.pid, "from": p.name,
+                              "to": target.name, "kind": "crate",
+                              "tier": c["tier"], "passes": c["passes"]})
+
+
+async def tick_hot(r: Room):
+    """Blow up anything whose fuse has run out."""
+    now = time.time()
+    for c in [x for x in r.hot.values() if now >= x["deadline"]]:
+        r.hot.pop(c["cid"], None)
+        holder = r.players.get(c["holder"])
+        if not holder:
+            continue
+        lost = holder.loadout.strip_random() if holder.loadout else None
+        await send(holder.ws, {
+            "t": "hot_blew", "crate": hot_public(c, now),
+            "lost": partsmod.public_part(lost, lost["slot"]) if lost else None,
+            "loadout": (holder.loadout or partsmod.Loadout()).public(),
+        })
+        await push_hot(r, holder)
+        await broadcast_hosts(r, {
+            "t": "wreck_fx", "name": holder.name,
+            "part": lost["name"] if lost else "nothing",
+            "tier": lost["tier"] if lost else "common", "kind": "crate"})
+
+
+async def start_minigame(r: Room, p: Player, kind: str, extra: Optional[dict] = None):
+    """
+    Interrupt this player's quiz for a real-time dodge or ring run.
+
+    Their live question is taken off the clock first, otherwise it would
+    expire while they are busy flying and they would be punished twice.
+    """
+    if r.quiz:
+        r.quiz.take(p.pid)
+    p.minigame = kind
+    await send(p.ws, {"t": "minigame", "kind": kind, **(extra or {})})
+
+
+async def end_minigame(r: Room, p: Player, success: bool, kind: str):
+    """Apply the stakes, then put them back into the quiz."""
+    p.minigame = ""
+    lost = None
+    if not success and p.loadout:
+        lost = p.loadout.strip_best() if kind == "dodge" else p.loadout.strip_random()
+
+    await send(p.ws, {
+        "t": "minigame_over", "kind": kind, "success": success,
+        "lost": partsmod.public_part(lost, lost["slot"]) if lost else None,
+        "loadout": (p.loadout or partsmod.Loadout()).public(),
+    })
+    if lost:
+        await broadcast_hosts(r, {
+            "t": "wreck_fx", "name": p.name, "part": lost["name"],
+            "tier": lost["tier"], "kind": kind})
+
+    if r.phase == "round" and p.alive and r.quiz:
+        inst = r.quiz.issue(p.pid)
+        await send(p.ws, {"t": "question", **inst.public()})
+
+
+async def handle_strike(r: Room, p: Player, msg: dict):
+    """Spend an earned missile on somebody. They get a chance to dodge."""
+    if p.strikes <= 0 or r.phase != "round":
+        return
+    target = r.players.get(msg.get("targetPid", ""))
+    if not target or target.pid == p.pid or not target.joined:
+        return
+    if target.minigame:
+        await send(p.ws, {"t": "toast", "kind": "bad",
+                          "text": target.name + " IS ALREADY BUSY"})
+        return
+    p.strikes -= 1
+    await send(p.ws, {"t": "strike_ready", "n": p.strikes})
+    await send(p.ws, {"t": "toast", "kind": "good",
+                      "text": "MISSILE AWAY → " + target.name})
+    if target.is_bot:
+        # bots dodge about half the time, so firing at one is still a gamble
+        await asyncio.sleep(1.2)
+        await end_minigame(r, target, random.random() < 0.5, "dodge")
+        return
+    await start_minigame(r, target, "dodge", {"from": p.name})
+    await broadcast_hosts(r, {"t": "strike_fx", "from": p.name, "to": target.name})
+
+
+def ring(r: Room) -> List[Player]:
+    """Everyone still in the game, in seating order around the circle."""
+    seated = [p for p in r.players.values() if p.joined and p.alive]
+    seated.sort(key=lambda p: p.seat)
+    return seated
+
+
+def neighbour(r: Room, p: Player, direction: str) -> Optional[Player]:
+    """
+    Who is to your left or right. Walks past anyone knocked out, so the
+    circle never has a dead seat you can throw things into.
+    """
+    seats = ring(r)
+    if len(seats) < 2 or p not in seats:
+        return None
+    i = seats.index(p)
+    step = -1 if direction == "left" else 1
+    return seats[(i + step) % len(seats)]
+
+
+def seating(r: Room) -> List[dict]:
+    seats = ring(r)
+    out = []
+    for i, p in enumerate(seats):
+        out.append({
+            "pid": p.pid, "name": p.name, "avatar": p.avatar, "seat": i,
+            "left": seats[(i - 1) % len(seats)].pid if len(seats) > 1 else None,
+            "right": seats[(i + 1) % len(seats)].pid if len(seats) > 1 else None,
+            "rating": (p.loadout or partsmod.Loadout()).rating(),
+            "filled": (p.loadout or partsmod.Loadout()).filled(),
+            "correct": p.correct,
+            "parts": (p.loadout or partsmod.Loadout()).public()["parts"],
+        })
+    return out
 
 
 def target_by_heading(r: Room, sender: Player, heading: float) -> Optional[Player]:
@@ -752,8 +1018,9 @@ async def handle_pass(r: Room, sender: Player, msg: dict):
                                "text": "LOCKED BAY — CAN'T PASS"})
         return
 
-    target = r.players.get(msg.get("targetPid", "")) or \
-        target_by_heading(r, sender, float(msg.get("heading", 0)))
+    direction = msg.get("dir")
+    target = neighbour(r, sender, direction) if direction else \
+        r.players.get(msg.get("targetPid", ""))
     if target is None or not target.alive or target.pid == sender.pid:
         return
 
@@ -783,8 +1050,10 @@ async def handle_pass(r: Room, sender: Player, msg: dict):
     await send(sender.ws, {"t": "question", **nxt.public()})
 
     if not silent:
-        await broadcast_hosts(r, {"t": "pass_fx", "from": sender.name,
-                                  "to": target.name, "heat": inst.heat})
+        await broadcast_hosts(r, {"t": "pass_fx", "fromPid": sender.pid,
+                                  "toPid": target.pid, "from": sender.name,
+                                  "to": target.name, "heat": inst.heat,
+                                  "kind": "question"})
 
 
 async def handle_trade(r: Room, p: Player, msg: dict):
@@ -967,8 +1236,17 @@ async def run_dogfight(r: Room):
                     continue
                 me = next((j for j in snap["jets"] if j["pid"] == p.pid), None)
                 if me:
+                    # a coarse blip list for the phone minimap — positions
+                    # rounded hard, since it only drives a 90px radar
+                    blips = [{"p": j["pid"], "x": round(j["x"] / 16),
+                              "y": round(j["y"] / 16),
+                              "h": round(j["heading"] / 15),
+                              "a": 1 if j["alive"] else 0}
+                             for j in snap["jets"]]
                     await send(p.ws, {"t": "fight_me", "me": me,
                                       "left": snap["left"],
+                                      "blips": blips,
+                                      "arena": snap["arena"],
                                       "events": [e for e in snap["events"]
                                                  if e.get("pid") == p.pid
                                                  or e.get("victimPid") == p.pid]})
@@ -1087,7 +1365,7 @@ def score_agendas(r: Room, fight, standings: List[dict]) -> List[dict]:
 # APP
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="Merge Conflict at Mach 2")
+app = FastAPI(title="SCRAMBLE")
 
 
 def lan_ip() -> str:
@@ -1132,6 +1410,16 @@ def base_url(request) -> str:
 @app.get("/")
 async def home():
     return FileResponse("static/index.html")
+
+
+@app.get("/rules")
+async def rules_page():
+    return FileResponse("static/rules.html")
+
+
+@app.get("/rules")
+async def rules_page():
+    return FileResponse("static/rules.html")
 
 
 @app.get("/host")
@@ -1264,6 +1552,25 @@ async def ws_endpoint(ws: WebSocket):
                     await resolve_answer(room, me, int(msg.get("choice", -1)),
                                          int(iid) if iid is not None else None)
 
+            elif t == "claim_hot":
+                if room.phase == "round":
+                    await claim_hot(room, me, int(msg.get("cid", 0)))
+
+            elif t == "pass_hot":
+                if room.phase == "round":
+                    await pass_hot(room, me, int(msg.get("cid", 0)),
+                                   msg.get("targetPid", ""),
+                                   msg.get("dir", ""))
+
+            elif t == "strike":
+                if room.phase == "round":
+                    await handle_strike(room, me, msg)
+
+            elif t == "minigame_result":
+                if me.minigame:
+                    await end_minigame(room, me, bool(msg.get("success")),
+                                       me.minigame)
+
             elif t == "trade":
                 await handle_trade(room, me, msg)
 
@@ -1311,7 +1618,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 if __name__ == "__main__":
     ip = lan_ip()
     print("\n" + "=" * 60)
-    print("  MERGE CONFLICT AT MACH 2")
+    print("  S C R A M B L E")
     print("=" * 60)
     print(f"  OPEN THIS   ->  {PUBLIC_URL['url']}")
     print(f"  ON THIS PC  ->  http://{ip}:{PORT}")

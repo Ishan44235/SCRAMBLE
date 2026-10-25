@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#07080c">
-<title>MERGE CONFLICT AT MACH 2</title>
+<title>SCRAMBLE</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
@@ -28,7 +28,7 @@
       <path d="M22 34h20v16a4 4 0 01-4 4H26a4 4 0 01-4-4V34z" fill="#1a1e2b" stroke="#3e8fff" stroke-width="2"/>
       <path d="M32 34v20" stroke="#3e8fff" stroke-width="1.6"/>
     </svg>
-    <div class="lm-text">MACH 2</div>
+    <div class="lm-text">SCRAMBLE</div>
   </div>
   <p style="margin-bottom:26px">Answer fast. Build your jet.<br>Dump what you don't know on somebody else.</p>
   <div style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:13px">
@@ -159,12 +159,26 @@
     </div>
   </div>
 
-  <ul style="margin-top:24px">
-    <li><span class="dot"></span><div>Tilt <b style="color:var(--text)">left and right</b> to move the piece.</div></li>
-    <li><span class="dot"></span><div><b style="color:var(--text)">Twist</b> the phone like a steering wheel to rotate.</div></li>
-    <li><span class="dot"></span><div><b style="color:var(--text)">Flick down</b> to slam the piece into place.</div></li>
-    <li><span class="dot"></span><div><b style="color:var(--text)">Flick forward</b> to pass it to someone.</div></li>
-  </ul>
+  <div class="gest-group">
+    <div class="gest-head">IN THE QUIZ</div>
+    <ul>
+      <li><span class="dot"></span><div><b>Tilt</b> toward one of the four answers to aim at it.</div></li>
+      <li><span class="dot"></span><div><b>Twist</b> the phone like a steering wheel to lock your answer in.</div></li>
+      <li><span class="dot"></span><div><b>Flick forward</b> to pass a question you don't know to someone else.</div></li>
+      <li><span class="dot"></span><div><b>Shake hard</b> to panic-pass it to a random rival.</div></li>
+    </ul>
+    <div class="gest-head">WHEN THINGS GO WRONG</div>
+    <ul>
+      <li><span class="dot"></span><div><b>Tilt to evade</b> when someone fires a missile at you, or lose your best part.</div></li>
+      <li><span class="dot"></span><div><b>Tilt to fly</b> the rings after three wrong in a row.</div></li>
+    </ul>
+    <div class="gest-head">IN THE DOGFIGHT</div>
+    <ul>
+      <li><span class="dot"></span><div><b>Bank</b> left and right to turn.</div></li>
+      <li><span class="dot"></span><div><b>Pitch forward</b> for throttle, back to slow down.</div></li>
+      <li><span class="dot"></span><div>Hold <b>GUNS</b>, tap <b>MISSILE</b>.</div></li>
+    </ul>
+  </div>
 
   <button class="btn" id="calibBtn" style="margin-top:24px">SET THIS AS NEUTRAL</button>
   <button class="btn ghost" id="calibSkip" style="margin-top:9px">SKIP — USE BUTTONS ONLY</button>
@@ -191,6 +205,9 @@
       <div class="num" id="qPtNum">20</div>
     </div>
   </div>
+
+  <!-- live crates: ticking parts you must claim or shove at somebody -->
+  <div class="hotbar" id="hotbar"></div>
 
   <!-- your jet, building itself as you answer -->
   <div class="jetstrip">
@@ -236,9 +253,22 @@
     <span class="ps-timer" id="qPsTimer"></span>
   </div>
 
+  <div class="neighbours" id="neighbours">
+    <div class="nb" id="nbLeft" data-dir="left">
+      <span class="nb-arrow">◀</span>
+      <span class="nb-av" id="nbLeftAv"></span>
+      <span class="nb-name" id="nbLeftName">—</span>
+    </div>
+    <div class="nb" id="nbRight" data-dir="right">
+      <span class="nb-name" id="nbRightName">—</span>
+      <span class="nb-av" id="nbRightAv"></span>
+      <span class="nb-arrow">▶</span>
+    </div>
+  </div>
+  <div class="nb-hint" id="nbHint">PASS LEFT OR RIGHT</div>
+
   <div class="controls" id="qControls">
-    <div class="ctl pass" id="qBtnPass"><span class="c-main">PASS IT ON</span><span class="c-sub">OR FLICK FORWARD</span></div>
-    <div class="ctl trace" id="qBtnAudit"><span class="c-main">AUDIT</span><span class="c-sub">2 LEFT</span></div>
+    <div class="ctl strike dis" id="qBtnStrike"><span class="c-main">MISSILE</span><span class="c-sub" id="qStrikeN">0 READY</span></div>
   </div>
 </section>
 
@@ -282,7 +312,10 @@
       <span class="th-v mono" id="fThrottleV">50%</span>
     </div>
 
-    <div class="f-status" id="fStatus"></div>
+    <div class="f-bottom">
+      <canvas id="fMinimap" class="minimap"></canvas>
+      <div class="f-status" id="fStatus"></div>
+    </div>
   </div>
 
   <div class="f-controls">
@@ -298,6 +331,16 @@
     <div class="fd-title">SHOT DOWN</div>
     <div class="fd-sub" id="fDeadSub">Respawning…</div>
   </div>
+</section>
+
+<!-- ======================== MINIGAME =========================== -->
+<section class="screen mini" id="s-minigame">
+  <div class="mg-head">
+    <div class="mg-title" id="mgTitle">INCOMING</div>
+    <div class="mg-sub" id="mgSub">TILT TO EVADE</div>
+  </div>
+  <canvas id="mgCanvas" class="mg-canvas"></canvas>
+  <div class="mg-result" id="mgResult"></div>
 </section>
 
 <!-- ======================= INTERMISSION ========================= -->
@@ -344,6 +387,7 @@
 <script src="/static/js/avatars.js"></script>
 <script src="/static/js/jetparts.js"></script>
 <script src="/static/js/dogfightclient.js"></script>
+<script src="/static/js/minigames.js"></script>
 <script src="/static/js/quizmode.js"></script>
 <script src="/static/js/motion.js"></script>
 <script src="/static/js/player.js"></script>

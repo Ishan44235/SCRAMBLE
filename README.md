@@ -1,4 +1,6 @@
-# MERGE CONFLICT AT MACH 2
+# SCRAMBLE
+
+*Deployed at **mergeconflictatmach2.study***
 
 A retro pixel-art arcade party game for phones in one room.
 
@@ -31,6 +33,9 @@ with stand-in pilots who pass questions at you and fly in the dogfight.
 ---
 
 ## Deploying to Render
+
+The game is called **SCRAMBLE**; `mergeconflictatmach2.study` is just where it
+lives. Nothing in the code depends on the domain.
 
 The game is a stateful WebSocket server, so static hosts (Netlify, GitHub
 Pages, Vercel's static tier) **cannot** run it. Render works well.

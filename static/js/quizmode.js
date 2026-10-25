@@ -99,6 +99,11 @@ function cancelLock() {
 /** Twist the phone (or tap) to commit to the aimed answer. */
 function quizLockIn(idx) {
   if (QUIZ.locked || QUIZ.inst === null) return;
+  if (STATE.mustPass > 0) {
+    toast('HOT HANDS — YOU MUST PASS THIS ONE', 'bad');
+    haptic([20, 40, 20]);
+    return;
+  }
   if (idx === undefined) idx = QUIZ.aim;
   if (idx < 0 || QUIZ.burned.includes(idx)) return;
 

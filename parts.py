@@ -142,6 +142,12 @@ def make_faulty(slot: Optional[str] = None, heat: int = 0) -> dict:
     return part
 
 
+def hot_from_public(pub: dict) -> dict:
+    """Rebuild a full part record from the trimmed version sent to clients."""
+    base = next(x for x in CATALOG[pub["slot"]] if x["tier"] == pub["tier"])
+    return dict(base, slot=pub["slot"], faulty=False)
+
+
 def better(new: dict, old: Optional[dict]) -> bool:
     """A higher tier wins the slot. A faulty part never displaces a clean one."""
     if old is None:
@@ -222,6 +228,16 @@ class Loadout:
         if not fitted:
             return None
         slot, part = max(fitted, key=lambda sp: TIER_RANK[sp[1]["tier"]])
+        self.parts[slot] = None
+        return part
+
+    def strip_random(self) -> Optional[dict]:
+        """Lose a part at random — the ring-run penalty."""
+        fitted = [s for s, p in self.parts.items() if p]
+        if not fitted:
+            return None
+        slot = random.choice(fitted)
+        part = self.parts[slot]
         self.parts[slot] = None
         return part
 

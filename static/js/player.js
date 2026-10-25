@@ -22,6 +22,10 @@ const STATE = {
   aiming: false,
   score: 0,
   quizWired: false,
+  strikes: 0,
+  aimMode: 'pass',
+  ring: [],
+  mustPass: 0,
   avatar: localStorage.getItem('tc_avatar') || 'fox',
 };
 
@@ -90,6 +94,7 @@ function handle(m) {
 
     case 'state': {
       STATE.roster = m.players;
+      if (m.ring) { STATE.ring = m.ring; renderNeighbours(); }
       STATE.round = m.round || 1;
       STATE.rounds = m.rounds;
       const prev = STATE.phase;
@@ -145,8 +150,27 @@ function handle(m) {
       quizBurn(m.indices);
       break;
 
-    case 'audit':
-      quizAudit(m);
+    case 'strike_ready':
+      STATE.strikes = m.n;
+      $('qStrikeN').textContent = m.n + ' READY';
+      $('qBtnStrike').classList.toggle('dis', m.n <= 0);
+      if (m.n > 0) { toast('MISSILE EARNED — 3 IN A ROW', 'good'); haptic(30); }
+      break;
+
+    case 'hot':
+      hotUpdate(m);
+      break;
+
+    case 'hot_blew':
+      hotBlew(m);
+      break;
+
+    case 'minigame':
+      mgStart(m.kind, m);
+      break;
+
+    case 'minigame_over':
+      mgOver(m);
       break;
 
     case 'part':
@@ -292,7 +316,8 @@ function startRound() {
   STATE.score = 0;
   $('qScore').textContent = '0';
   $('qStreak').textContent = '0';
-  if (!STATE.quizWired) { wireQuizControls(); STATE.quizWired = true; }
+  if (!STATE.quizWired) { wireQuizControls(); wireNeighbours(); STATE.quizWired = true; }
+  renderNeighbours();
   renderJetStrip();
 }
 
@@ -394,19 +419,12 @@ function wireQuizControls() {
     tap(el, () => quizLockIn(parseInt(el.dataset.i, 10)));
   });
 
-  tap($('qBtnPass'), () => openAim());
-  tap($('qBtnAudit'), () => { if (QUIZ.auditsLeft > 0) send({ t: 'trace' }); });
+  tap($('qBtnPass'), () => openAim('pass'));
+  tap($('qBtnStrike'), () => {
+    if (STATE.strikes > 0) openAim('strike');
+  });
 
-  if (STATE.role && STATE.role.role !== 'detective') {
-    $('qBtnAudit').style.display = 'none';
-    $('qBtnPass').style.gridColumn = 'span 2';
-  }
-
-  // The Cheat passes with a doctor toggle.
-  if (STATE.role && STATE.role.role === 'imposter') {
-    $('qHint').innerHTML =
-      'TILT TO AIM · TWIST TO LOCK · <b style="color:var(--danger)">PASS TO DOCTOR</b>';
-  }
+  wireMotionWarn();
 
   // Motion for quiz mode. Aiming is read continuously in quizTick(); these
   // are the discrete gestures.
@@ -415,22 +433,104 @@ function wireQuizControls() {
   motion.on.rotate = () => {                 // twist = lock in your answer
     if (STATE.phase === 'round' && !STATE.aiming) quizLockIn();
   };
-  motion.on.flick = () => {                  // flick forward = pass it on
-    if (STATE.phase === 'round' && !STATE.aiming) openAim();
-  };
+  motion.on.flick = null;   // passing is left/right around the circle now
+  // Shake hard = PANIC PASS: dumps the question on a random rival instantly.
+  // Faster than aiming, but you don't get to choose who catches it.
   motion.on.shake = () => {
-    if (STATE.role && STATE.role.role === 'detective' && QUIZ.auditsLeft > 0) {
-      send({ t: 'trace' });
-    }
+    if (STATE.phase !== 'round' || STATE.aiming) return;
+    if (QUIZ.inst === null || QUIZ.locked) return;
+    if (STATE.aimMode === 'pass' && STATE.noPass) {
+    toast('LOCKED BAY — CAN\'T PASS', 'bad'); return;
+  }
+    const dir = Math.random() < 0.5 ? 'left' : 'right';
+    if (STATE.mustPass > 0) STATE.mustPass--;
+    send({ t: 'pass', dir });
+    toast('PANIC PASS ' + dir.toUpperCase(), 'warn');
+    haptic([25, 30, 25]);
   };
 }
 
+/* ------------------------------------------------------- the circle */
+function myRingSeat() {
+  return (STATE.ring || []).find(x => x.pid === STATE.pid) || null;
+}
+
+function renderNeighbours() {
+  const me = myRingSeat();
+  if (!me) return;
+  const byPid = Object.fromEntries((STATE.ring || []).map(x => [x.pid, x]));
+  const L = byPid[me.left], R = byPid[me.right];
+
+  if (L) {
+    $('nbLeftAv').innerHTML = avatarSVG(L.avatar || 'fox', 26, { bg: '#0b0d14' });
+    $('nbLeftName').textContent = L.name;
+  }
+  if (R) {
+    $('nbRightAv').innerHTML = avatarSVG(R.avatar || 'fox', 26, { bg: '#0b0d14' });
+    $('nbRightName').textContent = R.name;
+  }
+  // with only two players both sides are the same person; say so
+  $('nbHint').textContent = (L && R && L.pid === R.pid)
+    ? 'ONLY ' + L.name + ' TO PASS TO'
+    : (STATE.shoveCid != null ? 'SHOVE THE CRATE LEFT OR RIGHT'
+                              : 'PASS LEFT OR RIGHT');
+}
+
+function wireNeighbours() {
+  ['nbLeft', 'nbRight'].forEach(id => {
+    const el = $(id);
+    const go = e => {
+      e.preventDefault();
+      const dir = el.dataset.dir;
+      if (STATE.shoveCid != null) {
+        send({ t: 'pass_hot', cid: STATE.shoveCid, dir });
+        STATE.shoveCid = null;
+        disarmShove();
+        toast('SHOVED IT ' + dir.toUpperCase(), 'warn');
+        haptic(30);
+        return;
+      }
+      if (QUIZ.inst === null || QUIZ.locked) return;
+      if (STATE.noPass) { toast('LOCKED BAY — CAN\'T PASS', 'bad'); return; }
+      if (STATE.mustPass > 0) STATE.mustPass--;
+      send({ t: 'pass', dir });
+      toast('PASSED ' + dir.toUpperCase(), 'good');
+      haptic(28);
+    };
+    el.addEventListener('touchstart', go, { passive: false });
+    el.addEventListener('click', go);
+  });
+}
+
+function armShove(cid) {
+  STATE.shoveCid = cid;
+  $('nbLeft').classList.add('armed');
+  $('nbRight').classList.add('armed');
+  renderNeighbours();
+  toast('PICK A DIRECTION', 'warn');
+}
+
+function disarmShove() {
+  STATE.shoveCid = null;
+  $('nbLeft').classList.remove('armed');
+  $('nbRight').classList.remove('armed');
+  renderNeighbours();
+}
+
 /* ---------------------------------------------------------- aiming */
-function openAim() {
-  if (QUIZ.inst === null || QUIZ.locked) return;
-  if (STATE.noPass) { toast('LOCKED BAY — CAN\'T PASS', 'bad'); return; }
+function openAim(mode) {
+  STATE.aimMode = mode || 'pass';
+  if (STATE.aimMode === 'pass' && (QUIZ.inst === null || QUIZ.locked)) return;
+  if (STATE.aimMode === 'hot' && HOT.shoving == null) return;
+  if (STATE.aimMode === 'pass' && STATE.noPass) {
+    toast('LOCKED BAY — CAN\'T PASS', 'bad'); return;
+  }
   STATE.aiming = true;
   $('aim').classList.add('on');
+  document.querySelector('.aim-title').textContent =
+    STATE.aimMode === 'strike' ? 'PICK A TARGET FOR THE MISSILE'
+    : STATE.aimMode === 'hot' ? 'WHO CATCHES THE LIVE CRATE?'
+    : 'POINT YOUR PHONE AT A PLAYER';
   motion.calibrate();
 
   const others = STATE.roster.filter(p => p.pid !== STATE.pid && p.alive);
@@ -485,7 +585,25 @@ function closeAim() {
 }
 
 function doPass(pid) {
+  if (STATE.aimMode === 'hot') {
+    if (HOT.shoving != null) send({ t: 'pass_hot', cid: HOT.shoving, targetPid: pid });
+    HOT.shoving = null;
+    closeAim();
+    haptic(30);
+    toast('SHOVED IT ON', 'warn');
+    return;
+  }
+  if (STATE.aimMode === 'strike') {
+    send({ t: 'strike', targetPid: pid });
+    closeAim();
+    haptic(35);
+    return;
+  }
   if (QUIZ.inst === null) { closeAim(); return; }
+  if (STATE.mustPass > 0) {
+    STATE.mustPass--;
+    if (STATE.mustPass === 0) toast('HOT HANDS SPENT', 'good');
+  }
   send({ t: 'pass', targetPid: pid });
   closeAim();
   haptic(35);
@@ -517,6 +635,7 @@ function applyCard(card) {
     STATE.noPass = true;
   }
   if (card.id === 'hothands') STATE.mustPass = card.charges || 2;
+  if (card.id !== 'hothands' && card.kind === 'handicap') STATE.mustPass = 0;
   if (card.id === 'blindspot') quizBlindSpot(3000);
 
   // big card flash

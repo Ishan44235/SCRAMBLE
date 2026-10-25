@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MERGE CONFLICT AT MACH 2 — Host</title>
+<title>SCRAMBLE — Host</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
@@ -20,20 +20,15 @@ body.urgent::after {
 </head>
 <body>
 <canvas id="sky"></canvas>
+<div class="crt"></div>
 <div class="host">
 
   <header class="host-head">
     <div class="host-logo">
-      <svg viewBox="0 0 64 64" fill="none">
-        <circle cx="32" cy="32" r="31" stroke="#242938"/>
-        <path d="M14 26h36l-3-7a6 6 0 00-5.6-3.8H22.6A6 6 0 0017 19l-3 7z" fill="#3e8fff"/>
-        <rect x="11" y="26" width="42" height="4.5" rx="2.2" fill="#3e8fff"/>
-        <path d="M22 34h20v16a4 4 0 01-4 4H26a4 4 0 01-4-4V34z" fill="#1a1e2b" stroke="#3e8fff" stroke-width="2"/>
-        <path d="M32 34v20" stroke="#3e8fff" stroke-width="1.6"/>
-      </svg>
+      <canvas id="logoJet" class="logo-jet"></canvas>
       <div>
-        <div class="hl-title">MACH 2</div>
-        <div class="hl-sub">MERGE CONFLICT AT MACH 2</div>
+        <div class="hl-title">SCRAMBLE</div>
+        <div class="hl-sub">ANSWER · BUILD · DOGFIGHT</div>
       </div>
     </div>
     <div class="host-phase" id="phaseChip">LOBBY</div>
@@ -58,55 +53,73 @@ body.urgent::after {
         Waiting for phones to connect…
       </div>
 
-      <div class="card settings" id="settingsPanel">
-        <div class="eyebrow">MATCH SETTINGS</div>
+      <button class="arcade-btn ghost sm" id="setToggle"
+              style="margin-top:22px;width:auto;padding:12px 20px">
+        <span class="ab-top">⚙ MATCH SETTINGS</span>
+      </button>
+
+      <div class="panel settings" id="settingsPanel" style="display:none">
         <div class="set-grid">
-          <label class="set">
+          <div class="set" data-key="round_seconds" data-min="15" data-max="600" data-step="5">
             <span class="set-k">ROUND LENGTH</span>
-            <span class="set-in">
-              <input type="number" id="setRoundSeconds" min="15" max="600" step="5">
-              <span class="set-u">sec</span>
-            </span>
-          </label>
-          <label class="set">
-            <span class="set-k">NUMBER OF ROUNDS</span>
-            <span class="set-in">
-              <input type="number" id="setRounds" min="1" max="10" step="1">
-              <span class="set-u">rds</span>
-            </span>
-          </label>
-          <label class="set">
-            <span class="set-k">DISCUSSION TIME</span>
-            <span class="set-in">
-              <input type="number" id="setDiscussionSeconds" min="5" max="600" step="5">
-              <span class="set-u">sec</span>
-            </span>
-          </label>
-          <label class="set">
-            <span class="set-k">VOTING TIME</span>
-            <span class="set-in">
-              <input type="number" id="setVoteSeconds" min="5" max="300" step="5">
-              <span class="set-u">sec</span>
-            </span>
-          </label>
-          <label class="set">
-            <span class="set-k">CARDS PER ROUND</span>
-            <span class="set-in">
-              <input type="number" id="setPowersPerRound" min="0" max="20" step="1">
-              <span class="set-u">cards</span>
-            </span>
-          </label>
-          <label class="set" id="setFightWrap">
-            <span class="set-k">DOGFIGHT LENGTH</span>
-            <span class="set-in">
-              <input type="number" id="setFightSeconds" min="15" max="300" step="5">
-              <span class="set-u">sec</span>
-            </span>
-          </label>
+            <div class="stepper">
+              <button class="st-btn" data-d="-1">−</button>
+              <span class="st-v" id="v_round_seconds">60</span>
+              <button class="st-btn" data-d="1">+</button>
+            </div>
+            <span class="set-u">SECONDS</span>
+          </div>
+          <div class="set" data-key="rounds" data-min="1" data-max="10" data-step="1">
+            <span class="set-k">ROUNDS</span>
+            <div class="stepper">
+              <button class="st-btn" data-d="-1">−</button>
+              <span class="st-v" id="v_rounds">3</span>
+              <button class="st-btn" data-d="1">+</button>
+            </div>
+            <span class="set-u">TOTAL</span>
+          </div>
+          <div class="set" data-key="powers_per_round" data-min="0" data-max="20" data-step="1">
+            <span class="set-k">CARDS / ROUND</span>
+            <div class="stepper">
+              <button class="st-btn" data-d="-1">−</button>
+              <span class="st-v" id="v_powers_per_round">3</span>
+              <button class="st-btn" data-d="1">+</button>
+            </div>
+            <span class="set-u">DRAWS</span>
+          </div>
+          <div class="set" data-key="discussion_seconds" data-min="5" data-max="600" data-step="5">
+            <span class="set-k">DISCUSSION</span>
+            <div class="stepper">
+              <button class="st-btn" data-d="-1">−</button>
+              <span class="st-v" id="v_discussion_seconds">45</span>
+              <button class="st-btn" data-d="1">+</button>
+            </div>
+            <span class="set-u">SECONDS</span>
+          </div>
+          <div class="set" data-key="vote_seconds" data-min="5" data-max="300" data-step="5">
+            <span class="set-k">THREAT VOTE</span>
+            <div class="stepper">
+              <button class="st-btn" data-d="-1">−</button>
+              <span class="st-v" id="v_vote_seconds">30</span>
+              <button class="st-btn" data-d="1">+</button>
+            </div>
+            <span class="set-u">SECONDS</span>
+          </div>
+          <div class="set" data-key="fight_seconds" data-min="15" data-max="300" data-step="5">
+            <span class="set-k">DOGFIGHT</span>
+            <div class="stepper">
+              <button class="st-btn" data-d="-1">−</button>
+              <span class="st-v" id="v_fight_seconds">75</span>
+              <button class="st-btn" data-d="1">+</button>
+            </div>
+            <span class="set-u">SECONDS</span>
+          </div>
         </div>
         <div class="set-foot">
           <span id="setSummary">—</span>
-          <button class="btn ghost sm" id="setReset" style="width:auto">RESET</button>
+          <button class="arcade-btn ghost sm" id="setReset" style="width:auto;padding:10px 16px">
+            <span class="ab-top">RESET</span>
+          </button>
         </div>
       </div>
     </div>
@@ -139,11 +152,11 @@ body.urgent::after {
       </div>
     </div>
     <div class="roster">
-      <div class="roster-head">
-        <span class="rh-k">LIVE STANDINGS</span>
+      <div class="circle-wrap">
+        <div class="circle" id="circle"></div>
+        <canvas id="circleFx" class="circle-fx"></canvas>
       </div>
-      <div class="roster-grid" id="scoreGrid" style="margin-bottom:28px"></div>
-      <div class="eyebrow" style="margin-bottom:12px">PASS FEED</div>
+      <div class="eyebrow" style="margin:18px 0 10px">FLIGHT LINE</div>
       <div class="feed" id="feed"></div>
     </div>
   </div>
@@ -196,10 +209,10 @@ body.urgent::after {
   </div>
 
   <footer class="host-foot">
-    <button class="btn" id="startBtn" disabled>START GAME</button>
-    <button class="btn ghost" id="soloBtn" style="width:auto;padding:17px 30px">SOLO TEST</button>
-    <button class="btn ghost" id="lobbyBtn" style="width:auto;padding:17px 30px;display:none">
-      ← BACK TO LOBBY
+    <button class="arcade-btn" id="startBtn" disabled style="width:auto;padding:18px 34px"><span class="ab-top">START GAME</span></button>
+    <button class="arcade-btn ghost" id="soloBtn" style="width:auto;padding:18px 26px"><span class="ab-top">SOLO TEST</span></button>
+    <button class="arcade-btn ghost" id="lobbyBtn" style="width:auto;padding:18px 26px;display:none">
+      <span class="ab-top">← LOBBY</span>
     </button>
     <div class="hf-hint" id="footHint">Need at least 3 players (4+ recommended).</div>
   </footer>
@@ -207,6 +220,7 @@ body.urgent::after {
 </div>
 
 <script src="/static/js/skyfield.js"></script>
+<script src="/static/js/hero.js"></script>
 <script src="/static/js/avatars.js"></script>
 <script src="/static/js/jetparts.js"></script>
 <script>
@@ -260,6 +274,7 @@ function handle(m) {
 
     paintRoster(m.players);
     paintScores(m.players);
+    if (m.ring) paintCircle(m.ring);
 
     $('accuracyPanel').style.display = '';
     paintAccuracy(m.accuracy);
@@ -268,11 +283,9 @@ function handle(m) {
     if (m.settings) {
       if (!serverDefaults) {
         serverDefaults = m.settings;
-        // only seed the inputs if nothing was restored from last time
-        if (!localStorage.getItem('tc_settings')) applySettings(m.settings);
-        else updateSummary();
+        if (!localStorage.getItem('mc_settings')) applySettings(m.settings);
       }
-      if (mid) applySettings(m.settings);   // show what's actually running
+      if (mid) applySettings(m.settings);
     }
     $('settingsPanel').classList.toggle('locked', mid);
     const humans = m.players.filter(p => !p.bot).length;
@@ -319,6 +332,29 @@ function handle(m) {
     paintAccuracy(m.accuracy);
   }
 
+  if (m.t === 'pass_fx' && m.fromPid && m.toPid) {
+    const col = m.kind === 'crate'
+      ? (TIER_COLOR[m.tier] || '#e5484d') : '#f5a524';
+    const tok = { fromPid: m.fromPid, toPid: m.toPid };
+    sendToken(m.fromPid, m.toPid, col,
+              m.kind === 'crate' ? 'CRATE' : null);
+    CIRCLE.tokens[CIRCLE.tokens.length - 1].toPid = m.toPid;
+    setTimeout(() => flashSeat(m.toPid, m.kind === 'crate' ? 'hit' : null), 480);
+  }
+
+  if (m.t === 'earn_fx') {
+    flashSeat(m.pid, 'gain');
+    arenaFeedSafe(`<b>${m.name}</b> fitted
+      <span style="color:${TIER_COLOR[m.tier]}">${m.part}</span>`, '');
+  }
+
+  if (m.t === 'wreck_fx') {
+    const p = (CIRCLE.seats.find(x => x.name === m.name) || {}).pid;
+    if (p) flashSeat(p, 'hit');
+    arenaFeedSafe(`<b>${m.name}</b> lost
+      <span style="color:var(--danger)">${m.part}</span>`, 'kill');
+  }
+
   if (m.t === 'pass_fx') {
     // A live feed of individual passes, with no running totals — the room sees
     // traffic happening without being handed a tally.
@@ -359,6 +395,16 @@ function paintAccuracy(acc) {
     : `The Cheat wins if this falls below ${Math.round(CHEAT_TARGET * 100)}%.`;
 }
 
+function arenaFeedSafe(text, kind) {
+  const el = document.createElement('div');
+  el.className = 'feed-item';
+  el.innerHTML = text;
+  const feed = $('feed');
+  if (!feed) return;
+  feed.prepend(el);
+  while (feed.children.length > 6) feed.lastChild.remove();
+}
+
 function paintRoster(players) {
   $('rosterGrid').innerHTML = players.map(p => `
     <div class="card roster-card" ${p.bot ? 'style="opacity:.55"' : ''}>
@@ -368,9 +414,119 @@ function paintRoster(players) {
     </div>`).join('');
 }
 
+/* =================== THE CIRCLE OF PILOTS ==================== */
+const CIRCLE = { seats: [], pos: {}, tokens: [] };
+
+function paintCircle(ring) {
+  if (!ring || !ring.length) return;
+  CIRCLE.seats = ring;
+  const el = $('circle');
+  const n = ring.length;
+
+  el.innerHTML = ring.map((p, i) => {
+    // start at the top and go clockwise, so the screen matches the room
+    const a = (-90 + (360 / n) * i) * Math.PI / 180;
+    const x = 50 + Math.cos(a) * 36;
+    const y = 50 + Math.sin(a) * 38;
+    const bays = ['engine','guns','missiles','wings','armor'].map(sl => {
+      const part = p.parts ? p.parts[sl] : null;
+      const c = part ? TIER_COLOR[part.tier] : 'rgba(255,255,255,.12)';
+      return `<span class="s-bay" style="background:${c}"></span>`;
+    }).join('');
+    return `<div class="seat" data-pid="${p.pid}" style="left:${x}%;top:${y}%">
+      <div class="s-av">${avatarSVG(p.avatar || 'fox', 34, { bg: '#0b0d14' })}</div>
+      <div class="s-name">${p.name}</div>
+      <div class="s-jet">${jetSVG(p.parts || null, 54)}</div>
+      <div class="s-bays">${bays}</div>
+      <div class="s-meta"><span class="s-rating">${p.rating || 0}</span>
+        · ${p.correct || 0} ok</div>
+    </div>`;
+  }).join('');
+
+  // remember pixel centres so tokens can fly between seats
+  const box = el.getBoundingClientRect();
+  CIRCLE.pos = {};
+  el.querySelectorAll('.seat').forEach(sEl => {
+    const r = sEl.getBoundingClientRect();
+    CIRCLE.pos[sEl.dataset.pid] = {
+      x: r.left + r.width / 2 - box.left,
+      y: r.top + r.height / 2 - box.top,
+    };
+  });
+}
+
+function seatEl(pid) { return $('circle').querySelector(`.seat[data-pid="${pid}"]`); }
+
+function flashSeat(pid, cls) {
+  const el = seatEl(pid);
+  if (!el) return;
+  el.classList.remove('pulse', 'hit', 'gain');
+  void el.offsetWidth;
+  el.classList.add('pulse');
+  if (cls) {
+    el.classList.add(cls);
+    setTimeout(() => el.classList.remove(cls), 900);
+  }
+}
+
+/** A thing flying from one seat to another. */
+function sendToken(fromPid, toPid, color, label) {
+  const a = CIRCLE.pos[fromPid], b = CIRCLE.pos[toPid];
+  if (!a || !b) return;
+  CIRCLE.tokens.push({ a, b, t: 0, color, label });
+  flashSeat(fromPid);
+}
+
+function drawCircleFx() {
+  const cv = $('circleFx');
+  if (!cv) return;
+  const wrap = cv.parentElement;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  if (cv.width !== w * dpr) { cv.width = w * dpr; cv.height = h * dpr; }
+  const c = cv.getContext('2d');
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.clearRect(0, 0, w, h);
+
+  // the ring itself
+  if (CIRCLE.seats.length > 1) {
+    c.strokeStyle = 'rgba(62,143,255,.1)';
+    c.lineWidth = 2;
+    c.beginPath();
+    c.ellipse(w / 2, h / 2, w * 0.36, h * 0.38, 0, 0, Math.PI * 2);
+    c.stroke();
+  }
+
+  CIRCLE.tokens = CIRCLE.tokens.filter(tk => {
+    tk.t += 0.028;
+    if (tk.t >= 1) { flashSeat(tk.b === CIRCLE.pos[tk.toPid] ? tk.toPid : null); return false; }
+    // arc the token outward so it reads as travelling around the ring
+    const e = tk.t < .5 ? 2 * tk.t * tk.t : 1 - Math.pow(-2 * tk.t + 2, 2) / 2;
+    const x = tk.a.x + (tk.b.x - tk.a.x) * e;
+    const y = tk.a.y + (tk.b.y - tk.a.y) * e - Math.sin(e * Math.PI) * 34;
+
+    c.globalAlpha = Math.min(1, (1 - tk.t) * 2.2);
+    c.fillStyle = tk.color;
+    c.fillRect(x - 7, y - 7, 14, 14);
+    c.fillStyle = '#06070b';
+    c.fillRect(x - 4, y - 4, 8, 8);
+    c.fillStyle = tk.color;
+    c.fillRect(x - 2, y - 2, 4, 4);
+    if (tk.label) {
+      c.font = '700 10px Inter, sans-serif';
+      c.textAlign = 'center';
+      c.fillText(tk.label, x, y - 13);
+    }
+    c.globalAlpha = 1;
+    return true;
+  });
+}
+
 function paintScores(players) {
+  const grid = $('scoreGrid');
+  if (!grid) return;                 // the circle replaced the scoreboard
   const sorted = [...players].sort((a, b) => b.score - a.score);
-  $('scoreGrid').innerHTML = sorted.map(p => `
+  grid.innerHTML = sorted.map(p => `
     <div class="card roster-card ${p.alive ? '' : 'dead'}">
       ${avatarSVG(p.avatar || 'fox', 34, { bg: '#0b0d14' })}
       <div class="rc-name">${p.name}
@@ -407,208 +563,66 @@ function paintResults(m) {
 }
 
 /* ------------------------- match settings ------------------------- */
-const SET_FIELDS = {
-  round_seconds: 'setRoundSeconds',
-  rounds: 'setRounds',
-  discussion_seconds: 'setDiscussionSeconds',
-  vote_seconds: 'setVoteSeconds',
-  powers_per_round: 'setPowersPerRound',
-  fight_seconds: 'setFightSeconds',
-};
+const SET_KEYS = ['round_seconds', 'rounds', 'powers_per_round',
+                  'discussion_seconds', 'vote_seconds', 'fight_seconds'];
 let serverDefaults = null;
-function readSettings() {
-  const out = {};
-  for (const [key, id] of Object.entries(SET_FIELDS)) {
-    const el = $(id);
-    let v = parseInt(el.value, 10);
-    if (isNaN(v)) v = parseInt(el.placeholder, 10) || 0;
-    v = Math.max(+el.min, Math.min(+el.max, v));
-    el.value = v;
-    out[key] = v;
-  }
-  return out;
+const setVals = {};
+
+function clampKey(key, v) {
+  const el = document.querySelector(`.set[data-key="${key}"]`);
+  const lo = +el.dataset.min, hi = +el.dataset.max;
+  return Math.max(lo, Math.min(hi, v));
 }
+
+function paintSettings() {
+  SET_KEYS.forEach(k => { $('v_' + k).textContent = setVals[k]; });
+  const total = setVals.round_seconds * setVals.rounds +
+    setVals.discussion_seconds + setVals.vote_seconds +
+    setVals.fight_seconds + 10;
+  const m = Math.floor(total / 60), sec = total % 60;
+  const spacing = setVals.powers_per_round
+    ? `CARD EVERY ${Math.round(setVals.round_seconds / setVals.powers_per_round)}S`
+    : 'NO CARDS';
+  $('setSummary').textContent =
+    `FULL MATCH ~${m}M ${String(sec).padStart(2, '0')}S · ${spacing}`;
+  localStorage.setItem('mc_settings', JSON.stringify(setVals));
+}
+
+function readSettings() { return { ...setVals }; }
 
 function applySettings(s) {
-  for (const [key, id] of Object.entries(SET_FIELDS)) {
-    if (s[key] !== undefined) $(id).value = s[key];
-  }
-  updateSummary();
+  SET_KEYS.forEach(k => {
+    if (s[k] !== undefined) setVals[k] = clampKey(k, +s[k]);
+  });
+  paintSettings();
 }
 
-function updateSummary() {
-  const s = readSettings();
-  const perRound = s.round_seconds * s.rounds;
-  const total = perRound + s.discussion_seconds + s.vote_seconds +
-    s.fight_seconds + 10;
-  const mins = Math.floor(total / 60), secs = total % 60;
-  const spacing = s.powers_per_round
-    ? `a card every ${(s.round_seconds / s.powers_per_round).toFixed(0)}s`
-    : 'no cards';
-  $('setSummary').textContent =
-    `Full match ≈ ${mins}m ${String(secs).padStart(2, '0')}s · ${spacing}`;
-  localStorage.setItem('tc_settings', JSON.stringify(s));
-}
-
-Object.values(SET_FIELDS).forEach(id => {
-  $(id).addEventListener('input', updateSummary);
-  $(id).addEventListener('change', updateSummary);
+document.querySelectorAll('.set').forEach(el => {
+  const key = el.dataset.key;
+  const step = +el.dataset.step;
+  el.querySelectorAll('.st-btn').forEach(b => {
+    b.onclick = () => {
+      setVals[key] = clampKey(key, setVals[key] + step * (+b.dataset.d));
+      paintSettings();
+      el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
+    };
+  });
 });
 
-$('setReset').onclick = () => {
-  if (serverDefaults) applySettings(serverDefaults);
+$('setToggle').onclick = () => {
+  const p = $('settingsPanel');
+  const open = p.style.display === 'none';
+  p.style.display = open ? 'block' : 'none';
+  $('setToggle').querySelector('.ab-top').textContent =
+    open ? '✕ HIDE SETTINGS' : '⚙ MATCH SETTINGS';
 };
 
-$('lobbyBtn').onclick = () => ws.send(JSON.stringify({ t: 'reset' }));
+$('setReset').onclick = () => { if (serverDefaults) applySettings(serverDefaults); };
 
-/* ========================== THE ARENA ============================== */
-const ARENA = { w: 1600, h: 900, sprites: {}, jets: [], snap: null, feed: [] };
-
-function arenaSetup(m) {
-  ARENA.w = m.arena[0]; ARENA.h = m.arena[1];
-  ARENA.sprites = {};
-  ARENA.feed = [];
-  (m.jets || []).forEach(j => {
-    ARENA.sprites[j.pid] = jetSprite(j.loadout.parts, 3);
-  });
-  ARENA.board = m.jets || [];
-  view('Fight');
-  // 3-2-1 before the fight opens
-  let n = 3;
-  const cd = $('arenaCountdown');
-  cd.classList.add('on');
-  cd.textContent = n;
-  const iv = setInterval(() => {
-    n--;
-    cd.textContent = n > 0 ? n : 'FIGHT';
-    if (n <= -1) { clearInterval(iv); cd.classList.remove('on'); }
-  }, 1000);
-}
-
-function arenaFeed(text, kind) {
-  ARENA.feed.unshift({ text, kind });
-  ARENA.feed = ARENA.feed.slice(0, 3);
-  $('arenaFeed').innerHTML = ARENA.feed
-    .map(f => `<div class="af ${f.kind}">${f.text}</div>`).join('');
-}
-
-function arenaFrame(snap) {
-  ARENA.snap = snap;
-  $('fightClock').textContent = fmt(snap.left);
-
-  (snap.events || []).forEach(e => {
-    if (e.kind === 'kill') {
-      arenaFeed(`<b>${e.killer || 'The ground'}</b> downed <b>${e.victim}</b>`, 'kill');
-    } else if (e.kind === 'fault') {
-      arenaFeed(`<b>${e.name}</b> — ${e.text}`, 'fault');
-    }
-  });
-
-  // standings strip
-  const sorted = [...snap.jets].sort((a, b) => b.kills - a.kills);
-  $('arenaBoard').innerHTML = sorted.map(j => `
-    <div class="ab ${j.alive ? '' : 'down'} ${j.failed.length ? 'sabotaged' : ''}">
-      ${avatarSVG(j.avatar || 'fox', 28, { bg: '#0b0d14' })}
-      <div>
-        <div class="ab-n">${j.name}</div>
-        <div class="ab-s">${Math.round(j.hp)} hp · ${j.missiles} msl${
-          j.failed.length ? ' · <span style="color:var(--danger)">FAULT</span>' : ''}</div>
-      </div>
-      <div class="ab-k">${j.kills}</div>
-    </div>`).join('');
-}
-
-function drawArena() {
-  const cv = $('arena');
-  const snap = ARENA.snap;
-  if (!cv || !snap) return;
-
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const w = cv.clientWidth, h = cv.clientHeight;
-  if (cv.width !== w * dpr || cv.height !== h * dpr) {
-    cv.width = w * dpr; cv.height = h * dpr;
-  }
-  const c = cv.getContext('2d');
-  c.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-  const sx = w / ARENA.w, sy = h / ARENA.h;
-
-  c.fillStyle = '#06070b';
-  c.fillRect(0, 0, w, h);
-
-  // faint grid so motion is readable
-  c.strokeStyle = 'rgba(255,255,255,.04)';
-  c.lineWidth = 1;
-  for (let x = 0; x <= ARENA.w; x += 200) {
-    c.beginPath(); c.moveTo(x * sx, 0); c.lineTo(x * sx, h); c.stroke();
-  }
-  for (let y = 0; y <= ARENA.h; y += 200) {
-    c.beginPath(); c.moveTo(0, y * sy); c.lineTo(w, y * sy); c.stroke();
-  }
-
-  // bullets
-  c.fillStyle = '#ffd48a';
-  snap.bullets.forEach(b => {
-    c.fillRect(b.x * sx - 1.5, b.y * sy - 1.5, 3, 3);
-  });
-
-  // missiles
-  snap.missiles.forEach(m => {
-    const x = m.x * sx, y = m.y * sy;
-    c.save();
-    c.translate(x, y);
-    c.rotate((m.h + 90) * Math.PI / 180);
-    c.fillStyle = '#ff9ea1';
-    c.fillRect(-2, -6, 4, 12);
-    c.fillStyle = 'rgba(245,165,36,.75)';
-    c.fillRect(-1.5, 6, 3, 6);
-    c.restore();
-  });
-
-  // jets
-  snap.jets.forEach(j => {
-    const sprite = ARENA.sprites[j.pid];
-    const x = j.x * sx, y = j.y * sy;
-    c.save();
-    c.translate(x, y);
-    c.rotate((j.heading + 90) * Math.PI / 180);
-    c.globalAlpha = j.alive ? 1 : 0.22;
-    if (sprite) {
-      c.drawImage(sprite, -sprite.width / 2, -sprite.height / 2);
-    } else {
-      c.fillStyle = '#9aa3b8';
-      c.fillRect(-7, -10, 14, 20);
-    }
-    c.restore();
-
-    // name + health pip
-    c.globalAlpha = j.alive ? 1 : 0.3;
-    c.font = '600 11px Inter, sans-serif';
-    c.textAlign = 'center';
-    c.fillStyle = 'rgba(255,255,255,.72)';
-    c.fillText(j.name, x, y - 28);
-    const bw = 34, pct = Math.max(0, j.hp / j.maxHp);
-    c.fillStyle = 'rgba(255,255,255,.14)';
-    c.fillRect(x - bw / 2, y - 24, bw, 3);
-    c.fillStyle = pct < 0.3 ? '#e5484d' : pct < 0.6 ? '#f5a524' : '#30a46c';
-    c.fillRect(x - bw / 2, y - 24, bw * pct, 3);
-    c.globalAlpha = 1;
-  });
-
-  // hit sparks
-  (snap.events || []).forEach(e => {
-    if (e.kind !== 'hit' && e.kind !== 'kill') return;
-    const x = e.x * sx, y = e.y * sy;
-    c.fillStyle = e.kind === 'kill' ? 'rgba(229,72,77,.9)' : 'rgba(255,212,138,.9)';
-    c.beginPath();
-    c.arc(x, y, e.kind === 'kill' ? 22 : 7, 0, Math.PI * 2);
-    c.fill();
-  });
-}
-
-// restore whatever they used last time
+// seed from last time, else wait for the server's defaults
+SET_KEYS.forEach(k => { setVals[k] = 0; });
 try {
-  const saved = JSON.parse(localStorage.getItem('tc_settings') || 'null');
+  const saved = JSON.parse(localStorage.getItem('mc_settings') || 'null');
   if (saved) applySettings(saved);
 } catch (e) {}
 
@@ -616,6 +630,7 @@ $('startBtn').onclick = () =>
   ws.send(JSON.stringify({ t: 'start', settings: readSettings() }));
 $('soloBtn').onclick = () =>
   ws.send(JSON.stringify({ t: 'start', fill: true, settings: readSettings() }));
+startHero($('logoJet'));
 
 function fmt(s) {
   const m = Math.floor(s / 60), r = Math.floor(s % 60);
@@ -638,6 +653,7 @@ function tick() {
   if (phase === 'discussion') $('discussClock').textContent = fmt(left);
   if (phase === 'vote') $('voteClock').textContent = fmt(left);
   if (phase === 'fight') drawArena();
+  if (phase === 'round' || phase === 'intermission') drawCircleFx();
   requestAnimationFrame(tick);
 }
 

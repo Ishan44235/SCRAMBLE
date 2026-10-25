@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-launch.py — one-click startup for MERGE CONFLICT AT MACH 2.
+launch.py — one-click startup for SCRAMBLE.
 
 Handles everything the manual steps did:
   * installs missing dependencies
@@ -165,7 +165,7 @@ def main():
 
     os.chdir(HERE)
     rule()
-    say("  MERGE CONFLICT AT MACH 2 — starting up")
+    say("  SCRAMBLE — starting up")
     rule()
 
     if port_in_use(PORT):
