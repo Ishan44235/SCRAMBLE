@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TRENCHCOAT — Host</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/style.css">
+<style>
+body { user-select: none; cursor: default; }
+body.urgent::after {
+  content: ''; position: fixed; inset: 0; z-index: 200; pointer-events: none;
+  border: 5px solid rgba(229, 72, 77, .75);
+  box-shadow: inset 0 0 90px 10px rgba(229, 72, 77, .3);
+  animation: final-pulse 1s ease-in-out infinite;
+}
+</style>
+</head>
+<body>
+<div class="host">
+
+  <header class="host-head">
+    <div class="host-logo">
+      <svg viewBox="0 0 64 64" fill="none">
+        <circle cx="32" cy="32" r="31" stroke="#242938"/>
+        <path d="M14 26h36l-3-7a6 6 0 00-5.6-3.8H22.6A6 6 0 0017 19l-3 7z" fill="#3e8fff"/>
+        <rect x="11" y="26" width="42" height="4.5" rx="2.2" fill="#3e8fff"/>
+        <path d="M22 34h20v16a4 4 0 01-4 4H26a4 4 0 01-4-4V34z" fill="#1a1e2b" stroke="#3e8fff" stroke-width="2"/>
+        <path d="M32 34v20" stroke="#3e8fff" stroke-width="1.6"/>
+      </svg>
+      <div>
+        <div class="hl-title">TRENCHCOAT</div>
+        <div class="hl-sub">HIDDEN-ROLE TETRIS</div>
+      </div>
+    </div>
+    <div class="host-phase" id="phaseChip">LOBBY</div>
+  </header>
+
+  <!-- ===================== LOBBY ===================== -->
+  <div class="host-body" id="viewLobby">
+    <div class="card qr-panel">
+      <div class="eyebrow">SCAN TO JOIN</div>
+      <img id="qr" src="/qr.png" alt="Join QR code" style="margin-top:18px">
+      <div class="qr-url" id="qrUrl">—</div>
+      <div class="qr-code" id="qrCode">····</div>
+    </div>
+
+    <div class="roster">
+      <div class="roster-head">
+        <span class="rh-n" id="playerCount">0</span>
+        <span class="rh-k">PLAYERS IN THE ROOM</span>
+      </div>
+      <div class="roster-grid" id="rosterGrid"></div>
+      <div id="lobbyEmpty" style="color:var(--text-mute);font-size:15px;margin-top:10px">
+        Waiting for phones to connect…
+      </div>
+
+      <div class="card settings" id="settingsPanel">
+        <div class="eyebrow">GAME MODE</div>
+        <div class="mode-pick">
+          <div class="mode-opt sel" data-mode="tetris">
+            <div class="mo-name">TRENCHCOAT</div>
+            <div class="mo-desc">Hidden-role Tetris. Tilt to move, flick to dump
+              pieces on rivals. The Imposter buries the table.</div>
+          </div>
+          <div class="mode-opt" data-mode="quiz">
+            <div class="mo-name">POP QUIZ</div>
+            <div class="mo-desc">Hidden-role trivia. Tilt to aim, twist to lock.
+              The Cheat doctors the answer key before passing it on.</div>
+          </div>
+        </div>
+
+        <div class="eyebrow" style="margin-top:24px">MATCH SETTINGS</div>
+        <div class="set-grid">
+          <label class="set">
+            <span class="set-k">ROUND LENGTH</span>
+            <span class="set-in">
+              <input type="number" id="setRoundSeconds" min="15" max="600" step="5">
+              <span class="set-u">sec</span>
+            </span>
+          </label>
+          <label class="set">
+            <span class="set-k">NUMBER OF ROUNDS</span>
+            <span class="set-in">
+              <input type="number" id="setRounds" min="1" max="10" step="1">
+              <span class="set-u">rds</span>
+            </span>
+          </label>
+          <label class="set">
+            <span class="set-k">DISCUSSION TIME</span>
+            <span class="set-in">
+              <input type="number" id="setDiscussionSeconds" min="5" max="600" step="5">
+              <span class="set-u">sec</span>
+            </span>
+          </label>
+          <label class="set">
+            <span class="set-k">VOTING TIME</span>
+            <span class="set-in">
+              <input type="number" id="setVoteSeconds" min="5" max="300" step="5">
+              <span class="set-u">sec</span>
+            </span>
+          </label>
+          <label class="set">
+            <span class="set-k">CARDS PER ROUND</span>
+            <span class="set-in">
+              <input type="number" id="setPowersPerRound" min="0" max="20" step="1">
+              <span class="set-u">cards</span>
+            </span>
+          </label>
+          <label class="set" id="setFightWrap">
+            <span class="set-k">DOGFIGHT LENGTH</span>
+            <span class="set-in">
+              <input type="number" id="setFightSeconds" min="15" max="300" step="5">
+              <span class="set-u">sec</span>
+            </span>
+          </label>
+        </div>
+        <div class="set-foot">
+          <span id="setSummary">—</span>
+          <button class="btn ghost sm" id="setReset" style="width:auto">RESET</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== ROUND ===================== -->
+  <div class="host-body" id="viewRound" style="display:none">
+    <div>
+      <div class="eyebrow">TIME REMAINING</div>
+      <div class="host-timer" id="roundClock">1:30</div>
+      <div style="margin-top:14px;font-size:17px;color:var(--text-dim)">
+        Round <span id="roundNo" class="mono">1</span> of <span id="roundTot" class="mono">3</span>
+      </div>
+      <div class="card" style="margin-top:32px;padding:24px">
+        <div class="eyebrow">NEXT CARD DRAW</div>
+        <div class="mono" id="powerClock" style="font-size:46px;font-weight:850;margin-top:8px">10</div>
+        <div style="font-size:13px;color:var(--text-mute);margin-top:6px">
+          Every player draws a power or a handicap.
+        </div>
+      </div>
+
+      <div class="card" id="accuracyPanel" style="margin-top:20px;padding:24px;display:none">
+        <div class="eyebrow">GROUP ACCURACY</div>
+        <div class="mono" id="accValue" style="font-size:58px;font-weight:850;margin-top:6px">—</div>
+        <div class="acc-bar"><div class="acc-fill" id="accFill"></div>
+          <div class="acc-line" id="accLine"></div></div>
+        <div style="font-size:12.5px;color:var(--text-mute);margin-top:10px" id="accNote">
+          The Cheat wins if this falls below the line.
+        </div>
+      </div>
+    </div>
+    <div class="roster">
+      <div class="roster-head">
+        <span class="rh-k">LIVE STANDINGS</span>
+      </div>
+      <div class="roster-grid" id="scoreGrid" style="margin-bottom:28px"></div>
+      <div class="eyebrow" style="margin-bottom:12px">PASS FEED</div>
+      <div class="feed" id="feed"></div>
+    </div>
+  </div>
+
+  <!-- ================== DISCUSSION =================== -->
+  <div id="viewDiscuss" style="display:none;flex:1;display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center">
+    <div class="eyebrow">DISCUSSION</div>
+    <div class="host-timer" id="discussClock" style="margin:18px 0">0:45</div>
+    <div style="font-size:21px;color:var(--text-dim);max-width:640px;line-height:1.6">
+      Who was dumping garbage? Who got buried?<br>
+      Compare notes. The vote opens when the clock hits zero.
+    </div>
+  </div>
+
+  <!-- ===================== VOTE ====================== -->
+  <div id="viewVote" style="display:none;flex:1;flex-direction:column;align-items:center;justify-content:center;text-align:center">
+    <div class="eyebrow">FINAL VOTE</div>
+    <div class="host-timer" id="voteClock" style="margin:18px 0">0:30</div>
+    <div style="font-size:26px;font-weight:800;margin-bottom:10px">
+      <span id="votesIn" class="mono">0</span> / <span id="votesOf" class="mono">0</span> locked in
+    </div>
+    <div style="font-size:17px;color:var(--text-mute)">Point the finger on your phone.</div>
+  </div>
+
+  <!-- ===================== FIGHT ===================== -->
+  <div id="viewFight" style="display:none;flex:1;flex-direction:column">
+    <div class="arena-head">
+      <div class="eyebrow">DOGFIGHT</div>
+      <div class="mono" id="fightClock" style="font-size:44px;font-weight:850">1:15</div>
+      <div class="arena-feed" id="arenaFeed"></div>
+    </div>
+    <div class="arena-wrap">
+      <canvas id="arena"></canvas>
+      <div class="arena-countdown" id="arenaCountdown"></div>
+    </div>
+    <div class="arena-board" id="arenaBoard"></div>
+  </div>
+
+  <!-- ==================== RESULTS ==================== -->
+  <div id="viewResults" style="display:none;flex:1;flex-direction:column;overflow-y:auto">
+    <div class="winner-banner">
+      <div class="wb-k">RESULT</div>
+      <div class="wb-v" id="winTitle">—</div>
+      <div class="wb-r" id="winReason">—</div>
+    </div>
+    <div class="eyebrow" style="margin-bottom:14px">THE TABLE</div>
+    <div class="reveal-grid" id="revealGrid"></div>
+    <div class="eyebrow" style="margin:30px 0 14px">VOTE TALLY</div>
+    <div class="feed" id="tallyList" style="max-height:none"></div>
+  </div>
+
+  <footer class="host-foot">
+    <button class="btn" id="startBtn" disabled>START GAME</button>
+    <button class="btn ghost" id="soloBtn" style="width:auto;padding:17px 30px">SOLO TEST</button>
+    <button class="btn ghost" id="lobbyBtn" style="width:auto;padding:17px 30px;display:none">
+      ← BACK TO LOBBY
+    </button>
+    <div class="hf-hint" id="footHint">Need at least 3 players (4+ recommended).</div>
+  </footer>
+
+</div>
+
+<script src="/static/js/avatars.js"></script>
+<script src="/static/js/jetparts.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+let ws, phase = 'lobby', endsAt = 0, powerAt = 0;
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onopen = () => ws.send(JSON.stringify({ t: 'hello_host' }));
+  ws.onmessage = e => handle(JSON.parse(e.data));
+  ws.onclose = () => setTimeout(connect, 1200);
+}
+
+fetch('/join-url').then(r => r.json()).then(d => {
+  $('qrUrl').textContent = d.url.replace(/^https?:\/\//, '');
+  $('qrCode').textContent = d.code;
+});
+
+function view(name) {
+  ['Lobby','Round','Discuss','Vote','Fight','Results'].forEach(v => {
+    const el = $('view' + v);
+    el.style.display = (v === name)
+      ? (v === 'Lobby' || v === 'Round' ? 'grid' : 'flex')
+      : 'none';
+  });
+}
+
+function handle(m) {
+  if (m.t === 'state') {
+    const prev = phase;
+    phase = m.phase;
+    endsAt = performance.now() + (m.endsIn || 0) * 1000;
+
+    $('phaseChip').textContent = {
+      lobby: 'LOBBY', calling: 'DIALLING…', roles: 'ROLES DEALT',
+      round: 'ROUND ' + m.round, intermission: 'BREAK — PASS TALLY',
+      discussion: 'DISCUSSION',
+      vote: 'VOTING', results: 'RESULTS'
+    }[m.phase] || m.phase.toUpperCase();
+
+    $('playerCount').textContent = m.players.length;
+    $('roundNo').textContent = m.round;
+    $('roundTot').textContent = m.rounds;
+    $('votesOf').textContent = m.players.filter(p => p.alive).length;
+
+    paintRoster(m.players);
+    paintScores(m.players);
+
+    const isQuiz = m.mode === 'quiz';
+    $('accuracyPanel').style.display = isQuiz ? '' : 'none';
+    if (isQuiz) paintAccuracy(m.accuracy);
+    if (mid && m.mode) { gameMode = m.mode; paintMode(); }
+
+    const mid = ['round','calling','roles','vote','discussion'].includes(m.phase);
+    if (m.settings) {
+      if (!serverDefaults) {
+        serverDefaults = m.settings;
+        // only seed the inputs if nothing was restored from last time
+        if (!localStorage.getItem('tc_settings')) applySettings(m.settings);
+        else updateSummary();
+      }
+      if (mid) applySettings(m.settings);   // show what's actually running
+    }
+    $('settingsPanel').classList.toggle('locked', mid);
+    const humans = m.players.filter(p => !p.bot).length;
+    $('startBtn').disabled = humans < 3 || mid;
+    $('soloBtn').disabled = humans < 1 || mid;
+    $('lobbyEmpty').style.display = m.players.length ? 'none' : 'block';
+    $('lobbyBtn').style.display = (m.phase === 'results') ? '' : 'none';
+
+    if (m.phase === 'results') {
+      $('footHint').textContent =
+        'Back to lobby to let new people scan in, then start another game.';
+    } else {
+      $('footHint').textContent = humans < 3
+        ? `${humans} phone${humans === 1 ? '' : 's'} connected. SOLO TEST fills the table with stand-ins.`
+        : `${humans} connected. Ready when you are.`;
+    }
+
+    if (m.phase === 'lobby' || m.phase === 'calling' || m.phase === 'roles') view('Lobby');
+    else if (m.phase === 'round' || m.phase === 'intermission') view('Round');
+    else if (m.phase === 'discussion') view('Discuss');
+    else if (m.phase === 'vote') view('Vote');
+    else if (m.phase === 'fight') view('Fight');
+    else if (m.phase === 'results') { view('Results'); paintResults(m); }
+
+    if (m.phase === 'calling' && prev !== 'calling') {
+      $('phaseChip').textContent = 'DIALLING…';
+    }
+  }
+
+  if (m.t === 'power_round') powerAt = performance.now() + 10000;
+
+  if (m.t === 'quiz_fx') {
+    const el = document.createElement('div');
+    el.className = 'feed-item';
+    const verdict = m.correct
+      ? '<span style="color:var(--good)">correct</span>'
+      : (m.timedOut ? '<span style="color:var(--warn)">ran out of time</span>'
+                    : '<span style="color:var(--danger)">wrong</span>');
+    const mult = m.multiplier > 1 ? ` <span style="color:var(--warn)">×${m.multiplier}</span>` : '';
+    el.innerHTML = `<b>${m.name}</b> — ${verdict}${mult}
+      <span style="color:var(--text-mute);font-family:var(--mono)"> ${m.points > 0 ? '+' : ''}${m.points}</span>`;
+    $('feed').prepend(el);
+    while ($('feed').children.length > 6) $('feed').lastChild.remove();
+    paintAccuracy(m.accuracy);
+  }
+
+  if (m.t === 'pass_fx') {
+    // A live feed of individual passes, with no running totals — the room sees
+    // traffic happening without being handed a tally.
+    const el = document.createElement('div');
+    el.className = 'feed-item';
+    const heat = m.heat > 1 ? ` <span style="color:var(--danger)">· heat ${m.heat}</span>` : '';
+    el.innerHTML = `<b>${m.from}</b> <span style="color:var(--text-mute)">passed to</span> <b>${m.to}</b>${heat}`;
+    $('feed').prepend(el);
+    while ($('feed').children.length > 6) $('feed').lastChild.remove();
+  }
+
+  if (m.t === 'vote_cast') {
+    $('votesIn').textContent = m.n;
+    $('votesOf').textContent = m.of;
+  }
+
+  if (m.t === 'scores') paintScores(m.players);
+  if (m.t === 'fight_start') arenaSetup(m);
+  if (m.t === 'fight') arenaFrame(m);
+  if (m.t === 'fight_over') {
+    arenaFeed(`<b>${m.standings[0] ? m.standings[0].name : '—'}</b> takes it`, 'kill');
+  }
+}
+
+const CHEAT_TARGET = 0.60;
+function paintAccuracy(acc) {
+  if (acc === null || acc === undefined) return;
+  const pct = Math.round(acc * 100);
+  $('accValue').textContent = pct + '%';
+  const fill = $('accFill');
+  fill.style.width = pct + '%';
+  fill.className = 'acc-fill' +
+    (acc < CHEAT_TARGET ? ' danger' : acc < CHEAT_TARGET + 0.1 ? ' warn' : '');
+  $('accLine').style.left = (CHEAT_TARGET * 100) + '%';
+  $('accValue').style.color = acc < CHEAT_TARGET ? 'var(--danger)' : '';
+  $('accNote').textContent = acc < CHEAT_TARGET
+    ? `Below ${Math.round(CHEAT_TARGET * 100)}% — the Cheat is winning.`
+    : `The Cheat wins if this falls below ${Math.round(CHEAT_TARGET * 100)}%.`;
+}
+
+function paintRoster(players) {
+  $('rosterGrid').innerHTML = players.map(p => `
+    <div class="card roster-card" ${p.bot ? 'style="opacity:.55"' : ''}>
+      ${avatarSVG(p.avatar || 'fox', 34, { bg: '#0b0d14' })}
+      <div class="rc-name">${p.name}${p.bot ? ' <span style="font-size:10px;color:var(--text-mute);letter-spacing:.14em">BOT</span>' : ''}</div>
+      ${p.answered && !p.bot ? '<div class="rc-score" style="color:var(--good)">✓</div>' : ''}
+    </div>`).join('');
+}
+
+function paintScores(players) {
+  const sorted = [...players].sort((a, b) => b.score - a.score);
+  $('scoreGrid').innerHTML = sorted.map(p => `
+    <div class="card roster-card ${p.alive ? '' : 'dead'}">
+      ${avatarSVG(p.avatar || 'fox', 34, { bg: '#0b0d14' })}
+      <div class="rc-name">${p.name}
+        <div style="font-size:10.5px;color:var(--text-mute);font-family:var(--mono);margin-top:2px">
+          ${p.lines || 0} lines
+        </div>
+      </div>
+      <div class="rc-score">${p.score}</div>
+    </div>`).join('');
+}
+
+function paintResults(m) {
+  const r = m.reveal || {};
+  $('winTitle').textContent = m.winner === 'imposter' ? 'IMPOSTER WINS' : 'CREW WINS';
+  $('winTitle').style.color = m.winner === 'imposter' ? 'var(--danger)' : 'var(--good)';
+  $('winReason').textContent = r.reason || '';
+
+  $('revealGrid').innerHTML = (r.roles || []).map(x => `
+    <div class="card reveal-card" style="border-color:${x.color}44">
+      <div style="display:flex;align-items:center;gap:12px">
+        ${avatarSVG(x.avatar || 'fox', 40, { bg: '#0b0d14' })}
+        <div>
+          <div class="rv-role" style="color:${x.color}">${x.role}</div>
+          <div class="rv-name">${x.name}</div>
+        </div>
+      </div>
+      <div class="rv-stat">${x.lines} lines cleared</div>
+    </div>`).join('');
+
+  $('tallyList').innerHTML = (r.tally || []).map(t => `
+    <div class="feed-item"><b>${t.name}</b>
+      <span style="color:var(--text-mute)"> — ${t.votes} vote${t.votes === 1 ? '' : 's'}</span></div>`).join('')
+    || '<div class="feed-item" style="color:var(--text-mute)">No votes cast.</div>';
+}
+
+/* ------------------------- match settings ------------------------- */
+const SET_FIELDS = {
+  round_seconds: 'setRoundSeconds',
+  rounds: 'setRounds',
+  discussion_seconds: 'setDiscussionSeconds',
+  vote_seconds: 'setVoteSeconds',
+  powers_per_round: 'setPowersPerRound',
+  fight_seconds: 'setFightSeconds',
+};
+let serverDefaults = null;
+let gameMode = localStorage.getItem('tc_mode') || 'tetris';
+
+function paintMode() {
+  document.querySelectorAll('.mode-opt').forEach(el =>
+    el.classList.toggle('sel', el.dataset.mode === gameMode));
+  // round length means something different in each mode
+  const rs = $('setRoundSeconds').closest('.set').querySelector('.set-k');
+  rs.textContent = gameMode === 'quiz' ? 'QUESTION ROUND LENGTH' : 'ROUND LENGTH';
+  // the dogfight only exists in quiz mode
+  $('setFightWrap').style.display = gameMode === 'quiz' ? '' : 'none';
+}
+document.querySelectorAll('.mode-opt').forEach(el => {
+  el.onclick = () => {
+    gameMode = el.dataset.mode;
+    localStorage.setItem('tc_mode', gameMode);
+    paintMode();
+    updateSummary();
+  };
+});
+
+function readSettings() {
+  const out = { mode: gameMode };
+  for (const [key, id] of Object.entries(SET_FIELDS)) {
+    const el = $(id);
+    let v = parseInt(el.value, 10);
+    if (isNaN(v)) v = parseInt(el.placeholder, 10) || 0;
+    v = Math.max(+el.min, Math.min(+el.max, v));
+    el.value = v;
+    out[key] = v;
+  }
+  return out;
+}
+
+function applySettings(s) {
+  for (const [key, id] of Object.entries(SET_FIELDS)) {
+    if (s[key] !== undefined) $(id).value = s[key];
+  }
+  updateSummary();
+}
+
+function updateSummary() {
+  const s = readSettings();
+  const perRound = s.round_seconds * s.rounds;
+  const total = perRound + s.discussion_seconds + s.vote_seconds +
+    (gameMode === 'quiz' ? s.fight_seconds + 10 : 0);
+  const mins = Math.floor(total / 60), secs = total % 60;
+  const spacing = s.powers_per_round
+    ? `a card every ${(s.round_seconds / s.powers_per_round).toFixed(0)}s`
+    : 'no cards';
+  $('setSummary').textContent =
+    `Full match ≈ ${mins}m ${String(secs).padStart(2, '0')}s · ${spacing}`;
+  localStorage.setItem('tc_settings', JSON.stringify(s));
+}
+
+Object.values(SET_FIELDS).forEach(id => {
+  $(id).addEventListener('input', updateSummary);
+  $(id).addEventListener('change', updateSummary);
+});
+
+$('setReset').onclick = () => {
+  if (serverDefaults) applySettings(serverDefaults);
+};
+
+$('lobbyBtn').onclick = () => ws.send(JSON.stringify({ t: 'reset' }));
+
+/* ========================== THE ARENA ============================== */
+const ARENA = { w: 1600, h: 900, sprites: {}, jets: [], snap: null, feed: [] };
+
+function arenaSetup(m) {
+  ARENA.w = m.arena[0]; ARENA.h = m.arena[1];
+  ARENA.sprites = {};
+  ARENA.feed = [];
+  (m.jets || []).forEach(j => {
+    ARENA.sprites[j.pid] = jetSprite(j.loadout.parts, 3);
+  });
+  ARENA.board = m.jets || [];
+  view('Fight');
+  // 3-2-1 before the fight opens
+  let n = 3;
+  const cd = $('arenaCountdown');
+  cd.classList.add('on');
+  cd.textContent = n;
+  const iv = setInterval(() => {
+    n--;
+    cd.textContent = n > 0 ? n : 'FIGHT';
+    if (n <= -1) { clearInterval(iv); cd.classList.remove('on'); }
+  }, 1000);
+}
+
+function arenaFeed(text, kind) {
+  ARENA.feed.unshift({ text, kind });
+  ARENA.feed = ARENA.feed.slice(0, 3);
+  $('arenaFeed').innerHTML = ARENA.feed
+    .map(f => `<div class="af ${f.kind}">${f.text}</div>`).join('');
+}
+
+function arenaFrame(snap) {
+  ARENA.snap = snap;
+  $('fightClock').textContent = fmt(snap.left);
+
+  (snap.events || []).forEach(e => {
+    if (e.kind === 'kill') {
+      arenaFeed(`<b>${e.killer || 'The ground'}</b> downed <b>${e.victim}</b>`, 'kill');
+    } else if (e.kind === 'fault') {
+      arenaFeed(`<b>${e.name}</b> — ${e.text}`, 'fault');
+    }
+  });
+
+  // standings strip
+  const sorted = [...snap.jets].sort((a, b) => b.kills - a.kills);
+  $('arenaBoard').innerHTML = sorted.map(j => `
+    <div class="ab ${j.alive ? '' : 'down'} ${j.failed.length ? 'sabotaged' : ''}">
+      ${avatarSVG(j.avatar || 'fox', 28, { bg: '#0b0d14' })}
+      <div>
+        <div class="ab-n">${j.name}</div>
+        <div class="ab-s">${Math.round(j.hp)} hp · ${j.missiles} msl${
+          j.failed.length ? ' · <span style="color:var(--danger)">FAULT</span>' : ''}</div>
+      </div>
+      <div class="ab-k">${j.kills}</div>
+    </div>`).join('');
+}
+
+function drawArena() {
+  const cv = $('arena');
+  const snap = ARENA.snap;
+  if (!cv || !snap) return;
+
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== w * dpr || cv.height !== h * dpr) {
+    cv.width = w * dpr; cv.height = h * dpr;
+  }
+  const c = cv.getContext('2d');
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const sx = w / ARENA.w, sy = h / ARENA.h;
+
+  c.fillStyle = '#06070b';
+  c.fillRect(0, 0, w, h);
+
+  // faint grid so motion is readable
+  c.strokeStyle = 'rgba(255,255,255,.04)';
+  c.lineWidth = 1;
+  for (let x = 0; x <= ARENA.w; x += 200) {
+    c.beginPath(); c.moveTo(x * sx, 0); c.lineTo(x * sx, h); c.stroke();
+  }
+  for (let y = 0; y <= ARENA.h; y += 200) {
+    c.beginPath(); c.moveTo(0, y * sy); c.lineTo(w, y * sy); c.stroke();
+  }
+
+  // bullets
+  c.fillStyle = '#ffd48a';
+  snap.bullets.forEach(b => {
+    c.fillRect(b.x * sx - 1.5, b.y * sy - 1.5, 3, 3);
+  });
+
+  // missiles
+  snap.missiles.forEach(m => {
+    const x = m.x * sx, y = m.y * sy;
+    c.save();
+    c.translate(x, y);
+    c.rotate((m.h + 90) * Math.PI / 180);
+    c.fillStyle = '#ff9ea1';
+    c.fillRect(-2, -6, 4, 12);
+    c.fillStyle = 'rgba(245,165,36,.75)';
+    c.fillRect(-1.5, 6, 3, 6);
+    c.restore();
+  });
+
+  // jets
+  snap.jets.forEach(j => {
+    const sprite = ARENA.sprites[j.pid];
+    const x = j.x * sx, y = j.y * sy;
+    c.save();
+    c.translate(x, y);
+    c.rotate((j.heading + 90) * Math.PI / 180);
+    c.globalAlpha = j.alive ? 1 : 0.22;
+    if (sprite) {
+      c.drawImage(sprite, -sprite.width / 2, -sprite.height / 2);
+    } else {
+      c.fillStyle = '#9aa3b8';
+      c.fillRect(-7, -10, 14, 20);
+    }
+    c.restore();
+
+    // name + health pip
+    c.globalAlpha = j.alive ? 1 : 0.3;
+    c.font = '600 11px Inter, sans-serif';
+    c.textAlign = 'center';
+    c.fillStyle = 'rgba(255,255,255,.72)';
+    c.fillText(j.name, x, y - 28);
+    const bw = 34, pct = Math.max(0, j.hp / j.maxHp);
+    c.fillStyle = 'rgba(255,255,255,.14)';
+    c.fillRect(x - bw / 2, y - 24, bw, 3);
+    c.fillStyle = pct < 0.3 ? '#e5484d' : pct < 0.6 ? '#f5a524' : '#30a46c';
+    c.fillRect(x - bw / 2, y - 24, bw * pct, 3);
+    c.globalAlpha = 1;
+  });
+
+  // hit sparks
+  (snap.events || []).forEach(e => {
+    if (e.kind !== 'hit' && e.kind !== 'kill') return;
+    const x = e.x * sx, y = e.y * sy;
+    c.fillStyle = e.kind === 'kill' ? 'rgba(229,72,77,.9)' : 'rgba(255,212,138,.9)';
+    c.beginPath();
+    c.arc(x, y, e.kind === 'kill' ? 22 : 7, 0, Math.PI * 2);
+    c.fill();
+  });
+}
+
+// restore whatever they used last time
+try {
+  const saved = JSON.parse(localStorage.getItem('tc_settings') || 'null');
+  if (saved) applySettings(saved);
+} catch (e) {}
+paintMode();
+
+$('startBtn').onclick = () =>
+  ws.send(JSON.stringify({ t: 'start', settings: readSettings() }));
+$('soloBtn').onclick = () =>
+  ws.send(JSON.stringify({ t: 'start', fill: true, settings: readSettings() }));
+
+function fmt(s) {
+  const m = Math.floor(s / 60), r = Math.floor(s % 60);
+  return `${m}:${String(r).padStart(2, '0')}`;
+}
+
+function tick() {
+  const left = Math.max(0, (endsAt - performance.now()) / 1000);
+  if (phase === 'round') {
+    $('roundClock').textContent = fmt(left);
+    const urgent = left > 0 && left <= 10;
+    $('roundClock').style.color = urgent ? 'var(--danger)' : '';
+    document.body.classList.toggle('urgent', urgent);
+    const p = Math.max(0, (powerAt - performance.now()) / 1000);
+    $('powerClock').textContent = Math.ceil(p) || 10;
+  } else {
+    $('roundClock').style.color = '';
+    document.body.classList.remove('urgent');
+  }
+  if (phase === 'discussion') $('discussClock').textContent = fmt(left);
+  if (phase === 'vote') $('voteClock').textContent = fmt(left);
+  if (phase === 'fight') drawArena();
+  requestAnimationFrame(tick);
+}
+
+connect();
+tick();
+</script>
+</body>
+</html>

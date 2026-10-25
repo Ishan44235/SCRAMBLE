@@ -1,0 +1,101 @@
+{
+  "title": "Animal Kingdom",
+  "description": "A sample deck. Replace this file with your own questions, or generate one from lecture material later.",
+  "questions": [
+    { "q": "Which animal has the largest eyes of any creature on Earth?",
+      "options": ["Colossal squid", "Blue whale", "Ostrich", "Giant panda"], "answer": 0 },
+
+    { "q": "How many hearts does an octopus have?",
+      "options": ["Three", "One", "Two", "Five"], "answer": 0 },
+
+    { "q": "What is a group of crows called?",
+      "options": ["A murder", "A parliament", "A gaggle", "A pod"], "answer": 0 },
+
+    { "q": "Which mammal is the only one capable of true sustained flight?",
+      "options": ["Bat", "Flying squirrel", "Colugo", "Sugar glider"], "answer": 0 },
+
+    { "q": "What colour is an octopus's blood?",
+      "options": ["Blue", "Red", "Green", "Clear"], "answer": 0 },
+
+    { "q": "Which bird can fly backwards?",
+      "options": ["Hummingbird", "Swift", "Kingfisher", "Falcon"], "answer": 0 },
+
+    { "q": "Roughly how long can a snail sleep in one stretch?",
+      "options": ["Up to 3 years", "About 12 hours", "About a week", "Around 40 days"], "answer": 0 },
+
+    { "q": "What is the fastest land animal over a short sprint?",
+      "options": ["Cheetah", "Pronghorn", "Lion", "Ostrich"], "answer": 0 },
+
+    { "q": "Which animal's fingerprints are so close to a human's they have confused crime scenes?",
+      "options": ["Koala", "Chimpanzee", "Gorilla", "Orangutan"], "answer": 0 },
+
+    { "q": "A group of flamingos is known as a what?",
+      "options": ["Flamboyance", "Flock", "Blush", "Stand"], "answer": 0 },
+
+    { "q": "How many bones are in a shark's skeleton?",
+      "options": ["None — it's cartilage", "About 50", "About 200", "Over 400"], "answer": 0 },
+
+    { "q": "Which animal never stops growing throughout its life?",
+      "options": ["Lobster", "Elephant", "Giraffe", "Hippopotamus"], "answer": 0 },
+
+    { "q": "What is the loudest animal on Earth relative to its body size?",
+      "options": ["Pistol shrimp", "Howler monkey", "Blue whale", "Cicada"], "answer": 0 },
+
+    { "q": "Which creature can survive being completely dried out for a decade?",
+      "options": ["Tardigrade", "Earthworm", "Sea cucumber", "Axolotl"], "answer": 0 },
+
+    { "q": "What do you call a baby platypus?",
+      "options": ["A puggle", "A joey", "A kit", "A pup"], "answer": 0 },
+
+    { "q": "Which animal sleeps with one half of its brain at a time?",
+      "options": ["Dolphin", "Sloth", "Horse", "Bear"], "answer": 0 },
+
+    { "q": "How many chambers does a cow's stomach have?",
+      "options": ["Four", "Two", "Three", "One"], "answer": 0 },
+
+    { "q": "Which big cat cannot roar?",
+      "options": ["Cheetah", "Lion", "Tiger", "Leopard"], "answer": 0 },
+
+    { "q": "What is the only bird known to have a true sense of smell for hunting at night?",
+      "options": ["Kiwi", "Owl", "Nightjar", "Penguin"], "answer": 0 },
+
+    { "q": "Which animal has blue-ringed markings that signal one of the ocean's deadliest venoms?",
+      "options": ["Blue-ringed octopus", "Lionfish", "Box jellyfish", "Cone snail"], "answer": 0 },
+
+    { "q": "Roughly how far can a kangaroo travel in a single bound?",
+      "options": ["About 9 metres", "About 2 metres", "About 4 metres", "About 15 metres"], "answer": 0 },
+
+    { "q": "What is a narwhal's 'tusk' actually made of?",
+      "options": ["An elongated tooth", "Bone", "Keratin horn", "Fused cartilage"], "answer": 0 },
+
+    { "q": "Which animal can regrow its entire limbs, spinal cord and parts of its heart?",
+      "options": ["Axolotl", "Gecko", "Starfish", "Newt"], "answer": 0 },
+
+    { "q": "How long is an elephant's pregnancy?",
+      "options": ["About 22 months", "About 9 months", "About 14 months", "About 30 months"], "answer": 0 },
+
+    { "q": "What is the primary diet of a giant panda?",
+      "options": ["Bamboo", "Fish", "Insects", "Fruit"], "answer": 0 },
+
+    { "q": "Which sea creature has three hearts and blue blood but no bones?",
+      "options": ["Octopus", "Jellyfish", "Squid", "Cuttlefish"], "answer": 0 },
+
+    { "q": "A group of owls is called a what?",
+      "options": ["Parliament", "Murder", "Congress", "Wisdom"], "answer": 0 },
+
+    { "q": "Which animal produces the strongest known bite force?",
+      "options": ["Saltwater crocodile", "Great white shark", "Hippopotamus", "Grizzly bear"], "answer": 0 },
+
+    { "q": "What makes a firefly glow?",
+      "options": ["A chemical reaction called bioluminescence", "Reflected moonlight", "Static electricity", "Heat from its wings"], "answer": 0 },
+
+    { "q": "Which bird builds the largest nest of any species?",
+      "options": ["Bald eagle", "Albatross", "Stork", "Condor"], "answer": 0 },
+
+    { "q": "How many legs does a lobster have in total, including claws?",
+      "options": ["Ten", "Six", "Eight", "Twelve"], "answer": 0 },
+
+    { "q": "Which animal's stripes are unique to each individual, like a fingerprint?",
+      "options": ["Zebra", "Tiger", "Both zebra and tiger", "Neither"], "answer": 2 }
+  ]
+}

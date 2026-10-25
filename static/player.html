@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#07080c">
+<title>TRENCHCOAT</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<div class="toasts" id="toasts"></div>
+<div class="final-warn" id="finalWarn"></div>
+<div class="part-pop" id="partPop"></div>
+
+<!-- ============================ JOIN ============================ -->
+<section class="screen on wait" id="s-join">
+  <div class="logo-mark">
+    <svg viewBox="0 0 64 64" fill="none">
+      <circle cx="32" cy="32" r="31" stroke="#242938"/>
+      <path d="M14 26h36l-3-7a6 6 0 00-5.6-3.8H22.6A6 6 0 0017 19l-3 7z" fill="#3e8fff"/>
+      <rect x="11" y="26" width="42" height="4.5" rx="2.2" fill="#3e8fff"/>
+      <path d="M22 34h20v16a4 4 0 01-4 4H26a4 4 0 01-4-4V34z" fill="#1a1e2b" stroke="#3e8fff" stroke-width="2"/>
+      <path d="M32 34v20" stroke="#3e8fff" stroke-width="1.6"/>
+    </svg>
+    <div class="lm-text">TRENCHCOAT</div>
+  </div>
+  <p style="margin-bottom:26px">Hidden-role Tetris. Pass the garbage.<br>Don't get caught holding it.</p>
+  <div style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:13px">
+    <input type="text" id="nameInput" placeholder="YOUR NAME" maxlength="14" autocomplete="off" autocapitalize="characters" spellcheck="false">
+    <div>
+      <div class="eyebrow" style="margin-bottom:9px;text-align:left">PICK YOUR FACE</div>
+      <div class="av-grid" id="avGrid"></div>
+    </div>
+    <button class="btn" id="joinBtn">JOIN GAME</button>
+  </div>
+</section>
+
+<!-- ========================== CONSENT =========================== -->
+<section class="screen consent" id="s-consent">
+  <div class="consent-icon">📱</div>
+  <h2>Motion access</h2>
+  <p>This game is played by moving your phone. We need permission to read its motion sensors.</p>
+  <ul>
+    <li><span class="dot"></span><div><b style="color:var(--text)">Tilt</b> left and right to move the falling piece.</div></li>
+    <li><span class="dot"></span><div><b style="color:var(--text)">Twist</b> the phone to rotate it.</div></li>
+    <li><span class="dot"></span><div><b style="color:var(--text)">Flick down</b> to slam the piece into place.</div></li>
+    <li><span class="dot"></span><div><b style="color:var(--text)">Flick forward</b> at someone to pass the piece to them.</div></li>
+  </ul>
+  <p class="fine">
+    Readings stay on your phone and in this game session. Nothing is recorded,
+    stored, or sent anywhere else, and everything is discarded when the game ends.
+    You can still play with the on-screen buttons if you decline.
+  </p>
+  <div style="margin-top:22px;display:flex;flex-direction:column;gap:9px">
+    <button class="btn" id="allowBtn">ALLOW MOTION ACCESS</button>
+    <button class="btn ghost" id="denyBtn">Use buttons instead</button>
+  </div>
+</section>
+
+<!-- =========================== LOBBY ============================ -->
+<section class="screen wait" id="s-lobby">
+  <div class="pulse-dot"></div>
+  <h2 id="lobbyName">YOU'RE IN</h2>
+  <p>Waiting for the host to start.<br><span id="lobbyCount" class="mono" style="color:var(--text)">0 players</span> in the room.</p>
+  <p style="margin-top:28px;font-size:12.5px;color:var(--text-mute);max-width:290px">
+    Keep your phone unlocked. You'll get a call when the game begins.
+  </p>
+  <button class="btn ghost" id="changeBtn" style="margin-top:22px;width:auto;padding:13px 24px;font-size:12.5px">
+    CHANGE NAME OR FACE
+  </button>
+</section>
+
+<!-- =========================== CALL ============================= -->
+<section class="screen call" id="s-call">
+  <div class="call-top">
+    <div class="call-label">Incoming call</div>
+    <div class="call-name">UNKNOWN NUMBER</div>
+    <div class="call-sub">mobile · no caller ID</div>
+    <div class="avatar-ring">
+      <!-- anonymous figure: hat + trench coat -->
+      <svg viewBox="0 0 128 128" fill="none">
+        <circle cx="64" cy="64" r="63" fill="#0d0f16"/>
+        <!-- hat brim -->
+        <ellipse cx="64" cy="43" rx="35" ry="7.5" fill="#1f2433"/>
+        <!-- hat crown -->
+        <path d="M44 43V29a5 5 0 015-5h30a5 5 0 015 5v14" fill="#2a3042"/>
+        <rect x="44" y="36" width="40" height="5" fill="#15192370"/>
+        <!-- head / face in shadow -->
+        <path d="M50 44h28v15a14 14 0 01-14 14 14 14 0 01-14-14V44z" fill="#0a0c12"/>
+        <!-- collar -->
+        <path d="M44 72l20 10 20-10 8 6-12 10H48L36 78l8-6z" fill="#2a3042"/>
+        <!-- coat body -->
+        <path d="M38 80c-6 4-10 11-10 19v29h72V99c0-8-4-15-10-19l-16 9-16-9z" fill="#232838"/>
+        <!-- lapels -->
+        <path d="M54 89l10 6 10-6 6 5-16 11-16-11 6-5z" fill="#1a1e2b"/>
+        <!-- belt -->
+        <rect x="30" y="110" width="68" height="6" fill="#161a26"/>
+        <rect x="58" y="108" width="12" height="10" rx="2" fill="#2a3042"/>
+      </svg>
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;align-items:center;width:100%">
+    <div class="call-hint">ANSWER TO RECEIVE YOUR ROLE</div>
+    <div class="call-actions">
+      <button class="call-btn decline" id="declineBtn" aria-label="Decline">
+        <svg viewBox="0 0 24 24"><path d="M6.6 10.8a15.1 15.1 0 006.6 6.6l2.2-2.2a1 1 0 011-.2 11.4 11.4 0 003.6.6 1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1 11.4 11.4 0 00.6 3.6 1 1 0 01-.3 1l-2.2 2.2z"/></svg>
+      </button>
+      <button class="call-btn answer" id="answerBtn" aria-label="Answer">
+        <svg viewBox="0 0 24 24"><path d="M6.6 10.8a15.1 15.1 0 006.6 6.6l2.2-2.2a1 1 0 011-.2 11.4 11.4 0 003.6.6 1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1 11.4 11.4 0 00.6 3.6 1 1 0 01-.3 1l-2.2 2.2z"/></svg>
+      </button>
+    </div>
+  </div>
+</section>
+
+<!-- =========================== ROLE ============================= -->
+<section class="screen role" id="s-role">
+  <div class="role-badge" id="roleBadge">ROLE</div>
+  <div class="role-name" id="roleName">—</div>
+  <div class="role-tagline" id="roleTagline">—</div>
+  <div class="card role-goal" id="roleGoal">—</div>
+  <div class="role-knows" id="roleKnows" style="display:none">
+    <div class="k-label" id="knowsLabel">YOUR IMPOSTER</div>
+    <div class="k-name" id="knowsName">—</div>
+  </div>
+  <p style="font-size:11.5px;color:var(--text-mute);margin-top:22px;text-align:center;letter-spacing:.1em">
+    DON'T LET ANYONE SEE THIS SCREEN
+  </p>
+</section>
+
+<!-- =========================== GAME ============================= -->
+<section class="screen game" id="s-game">
+  <div class="hud">
+    <div class="hud-cell"><div class="v" id="hudScore">0</div><div class="k">SCORE</div></div>
+    <div class="hud-cell"><div class="v" id="hudLines">0</div><div class="k">LINES</div></div>
+    <div class="hud-cell"><div class="v" id="hudRound">1/3</div><div class="k">ROUND</div></div>
+    <div class="hud-spacer"></div>
+    <div class="hud-cell" style="align-items:flex-end"><div class="v" id="hudClock">1:30</div><div class="k">LEFT</div></div>
+    <div class="power-timer" id="powerTimer">
+      <svg width="38" height="38">
+        <circle class="track" cx="19" cy="19" r="15.5" fill="none" stroke-width="3"/>
+        <circle class="fill" id="ptFill" cx="19" cy="19" r="15.5" fill="none" stroke-width="3"
+                stroke-dasharray="97.4" stroke-dashoffset="0" stroke-linecap="round"/>
+      </svg>
+      <div class="num" id="ptNum">10</div>
+    </div>
+  </div>
+
+  <!-- who has dumped on you, and how many times -->
+  <div class="dumpers" id="dumpers"></div>
+
+  <div class="board-wrap" id="boardWrap">
+    <canvas id="board"></canvas>
+    <div class="next-chip">
+      <div class="k">NEXT</div>
+      <canvas id="nextCv"></canvas>
+    </div>
+    <div class="incoming-flash" id="flash"></div>
+    <div class="power-card" id="powerCard">
+      <div class="pc-icon" id="pcIcon">⚡</div>
+      <div class="pc-kind" id="pcKind">POWER</div>
+      <div class="pc-name" id="pcName">—</div>
+      <div class="pc-desc" id="pcDesc">—</div>
+    </div>
+    <div class="aim" id="aim">
+      <div class="aim-title">POINT YOUR PHONE AT A PLAYER</div>
+      <div class="aim-name" id="aimName">—</div>
+      <div class="aim-ring" id="aimRing">
+        <div class="aim-needle"></div>
+      </div>
+      <div class="aim-list" id="aimList"></div>
+      <button class="btn ghost sm" id="aimCancel" style="margin-top:16px;width:auto;padding:11px 26px">CANCEL</button>
+    </div>
+  </div>
+
+  <div class="power-strip" id="powerStrip">
+    <span class="ps-dot" id="psDot"></span>
+    <span class="ps-name" id="psName">NO CARD — NEXT DRAW SOON</span>
+    <span class="ps-timer" id="psTimer"></span>
+  </div>
+
+  <!-- live tilt meter: proves the sensor is working and shows the dead zone -->
+  <div class="tiltbar" id="tiltBar">
+    <div class="tb-zone"></div>
+    <div class="tb-needle" id="tbNeedle"></div>
+    <div class="tb-label tb-l">◀ TILT</div>
+    <div class="tb-label tb-r">TILT ▶</div>
+  </div>
+
+  <div class="motion-warn" id="motionWarn">
+    NO MOTION DATA — tap to fix
+  </div>
+
+  <div class="controls">
+    <div class="ctl" id="btnRotate"><span class="c-main">ROTATE</span><span class="c-sub">OR TWIST PHONE</span></div>
+    <div class="ctl" id="btnDrop"><span class="c-main">DROP</span><span class="c-sub">OR FLICK DOWN</span></div>
+    <div class="ctl pass" id="btnPass"><span class="c-main">PASS IT ON</span><span class="c-sub">OR FLICK FORWARD</span></div>
+    <div class="ctl trace" id="btnTrace"><span class="c-main">TRACE</span><span class="c-sub">2 LEFT</span></div>
+  </div>
+</section>
+
+<!-- ====================== CALIBRATE ====================== -->
+<section class="screen consent" id="s-calib">
+  <div class="consent-icon">🎯</div>
+  <h2>Hold it how you'll play</h2>
+  <p>Hold the phone upright in front of you, comfortably, exactly how you want
+     to hold it during the game. Then tap below — that angle becomes your
+     neutral.</p>
+
+  <div class="tiltbar" style="margin:28px 0 10px;position:relative">
+    <div class="tb-zone"></div>
+    <div class="tb-needle" id="calibNeedle"></div>
+  </div>
+  <div style="text-align:center;font-size:12px;color:var(--text-mute);letter-spacing:.12em" id="calibStatus">
+    WAITING FOR SENSOR…
+  </div>
+
+  <div class="ios-tip" id="iosTip">
+    <div class="it-head">⚠️ iPhone: turn off Shake to Undo</div>
+    <div class="it-body">
+      Settings → Accessibility → Touch → <b>Shake to Undo</b> → off.<br>
+      Otherwise shaking to Trace pops up an "Undo Typing" box mid-game.
+      iOS won't let a website turn this off for you.
+    </div>
+  </div>
+
+  <ul style="margin-top:24px">
+    <li><span class="dot"></span><div>Tilt <b style="color:var(--text)">left and right</b> to move the piece.</div></li>
+    <li><span class="dot"></span><div><b style="color:var(--text)">Twist</b> the phone like a steering wheel to rotate.</div></li>
+    <li><span class="dot"></span><div><b style="color:var(--text)">Flick down</b> to slam the piece into place.</div></li>
+    <li><span class="dot"></span><div><b style="color:var(--text)">Flick forward</b> to pass it to someone.</div></li>
+  </ul>
+
+  <button class="btn" id="calibBtn" style="margin-top:24px">SET THIS AS NEUTRAL</button>
+  <button class="btn ghost" id="calibSkip" style="margin-top:9px">SKIP — USE BUTTONS ONLY</button>
+  <button class="btn ghost" id="diagBtn" style="margin-top:9px;font-size:12px;padding:11px">
+    SENSOR NOT WORKING? TAP FOR DIAGNOSTICS
+  </button>
+  <pre class="diag" id="diagBox"></pre>
+</section>
+
+<!-- =========================== QUIZ ============================= -->
+<section class="screen quiz" id="s-quiz">
+  <div class="hud">
+    <div class="hud-cell"><div class="v" id="qScore">0</div><div class="k">SCORE</div></div>
+    <div class="hud-cell"><div class="v" id="qStreak">0</div><div class="k">CORRECT</div></div>
+    <div class="hud-cell"><div class="v" id="qRound">1/3</div><div class="k">ROUND</div></div>
+    <div class="hud-spacer"></div>
+    <div class="hud-cell" style="align-items:flex-end"><div class="v" id="qClock">1:00</div><div class="k">ROUND</div></div>
+    <div class="power-timer" id="qPowerTimer">
+      <svg width="38" height="38">
+        <circle class="track" cx="19" cy="19" r="15.5" fill="none" stroke-width="3"/>
+        <circle class="fill" id="qPtFill" cx="19" cy="19" r="15.5" fill="none" stroke-width="3"
+                stroke-dasharray="97.4" stroke-dashoffset="0" stroke-linecap="round"/>
+      </svg>
+      <div class="num" id="qPtNum">20</div>
+    </div>
+  </div>
+
+  <div class="q-wrap">
+    <!-- heat + countdown -->
+    <div class="q-meta">
+      <span class="q-heat" id="qHeat"></span>
+      <span class="q-from" id="qFrom"></span>
+      <span class="q-mult" id="qMult"></span>
+    </div>
+    <div class="q-timer"><div class="q-timer-fill" id="qTimerFill"></div></div>
+
+    <div class="q-text" id="qText">Waiting for the first question…</div>
+
+    <div class="q-grid" id="qGrid">
+      <div class="q-opt" data-i="0"><span class="q-key">A</span><span class="q-label"></span></div>
+      <div class="q-opt" data-i="1"><span class="q-key">B</span><span class="q-label"></span></div>
+      <div class="q-opt" data-i="2"><span class="q-key">C</span><span class="q-label"></span></div>
+      <div class="q-opt" data-i="3"><span class="q-key">D</span><span class="q-label"></span></div>
+    </div>
+
+    <div class="q-hint" id="qHint">TILT TO AIM · TWIST TO LOCK IN</div>
+    <div class="q-flash" id="qFlash"></div>
+    <div class="audit-card" id="auditCard">
+      <div class="a-k">PROCTOR AUDIT</div>
+      <div class="a-v" id="auditVerdict">—</div>
+      <div class="a-d" id="auditDetail">—</div>
+    </div>
+  </div>
+
+  <div class="power-strip" id="qPowerStrip">
+    <span class="ps-dot" id="qPsDot"></span>
+    <span class="ps-name" id="qPsName">NO CARD — NEXT DRAW SOON</span>
+    <span class="ps-timer" id="qPsTimer"></span>
+  </div>
+
+  <div class="controls" id="qControls">
+    <div class="ctl pass" id="qBtnPass"><span class="c-main">PASS IT ON</span><span class="c-sub">OR FLICK FORWARD</span></div>
+    <div class="ctl trace" id="qBtnAudit"><span class="c-main">AUDIT</span><span class="c-sub">2 LEFT</span></div>
+  </div>
+</section>
+
+<!-- ========================== HANGAR ============================ -->
+<section class="screen wait" id="s-hangar">
+  <div class="eyebrow">YOUR AIRCRAFT</div>
+  <div id="hangarJet" style="margin:14px 0 6px"></div>
+  <div class="mono" id="hangarRating" style="font-size:15px;color:var(--text-dim)">RATING 0</div>
+  <div class="loadout" id="hangarList"></div>
+  <div class="mono" id="hangarClock" style="font-size:38px;font-weight:850;margin-top:18px">4</div>
+  <p style="font-size:12px;color:var(--text-mute);margin-top:4px">LAUNCHING</p>
+</section>
+
+<!-- ========================= DOGFIGHT =========================== -->
+<section class="screen fight" id="s-fight">
+  <div class="f-top">
+    <div class="f-stat"><div class="v" id="fKills">0</div><div class="k">KILLS</div></div>
+    <div class="f-stat"><div class="v" id="fMissiles">0</div><div class="k">MISSILES</div></div>
+    <div class="f-spacer"></div>
+    <div class="f-stat" style="align-items:flex-end"><div class="v" id="fClock">1:15</div><div class="k">LEFT</div></div>
+  </div>
+
+  <div class="hp-bar"><div class="hp-fill" id="fHpFill"></div>
+    <span class="hp-text" id="fHpText">100</span></div>
+
+  <div class="f-body">
+    <!-- artificial horizon: shows bank and throttle so the controls are legible -->
+    <div class="horizon" id="fHorizon">
+      <div class="hz-sky" id="hzSky"></div>
+      <div class="hz-jet">
+        <div class="hz-wing"></div>
+        <div class="hz-dot"></div>
+      </div>
+      <div class="hz-label hz-l">◀ BANK</div>
+      <div class="hz-label hz-r">BANK ▶</div>
+    </div>
+
+    <div class="throttle">
+      <div class="th-fill" id="fThrottle"></div>
+      <span class="th-k">THROTTLE</span>
+      <span class="th-v mono" id="fThrottleV">50%</span>
+    </div>
+
+    <div class="f-status" id="fStatus"></div>
+  </div>
+
+  <div class="f-controls">
+    <div class="f-btn guns" id="fGuns">
+      <span class="fb-main">GUNS</span><span class="fb-sub">HOLD</span>
+    </div>
+    <div class="f-btn msl" id="fMissile">
+      <span class="fb-main">MISSILE</span><span class="fb-sub" id="fMslCount">0 LEFT</span>
+    </div>
+  </div>
+
+  <div class="f-dead" id="fDead">
+    <div class="fd-title">SHOT DOWN</div>
+    <div class="fd-sub" id="fDeadSub">Respawning…</div>
+  </div>
+</section>
+
+<!-- ======================= INTERMISSION ========================= -->
+<section class="screen wait" id="s-inter">
+  <div class="eyebrow" id="interEyebrow">ROUND 1 COMPLETE</div>
+  <h2 style="margin-top:9px" id="interTitle">ROUND STANDINGS</h2>
+  <p style="font-size:12.5px;margin-top:7px" id="interSub">Lines cleared this match.</p>
+  <div class="tally" id="interTally"></div>
+  <div class="mono" id="interClock" style="font-size:34px;font-weight:800;margin-top:20px">5</div>
+  <p style="font-size:12px;color:var(--text-mute);margin-top:4px" id="interNext">NEXT ROUND STARTING</p>
+</section>
+
+<!-- ======================== DISCUSSION ========================== -->
+<section class="screen wait" id="s-discuss">
+  <div class="pulse-dot"></div>
+  <h2>TALK IT OUT</h2>
+  <p>Who was dumping? Who got buried?<br>The vote opens shortly.</p>
+  <div class="card" id="analystCard" style="display:none;margin-top:26px;padding:20px;width:100%;max-width:330px;text-align:left">
+    <div class="eyebrow" style="color:var(--violet)">ANALYST INTEL · ±3 ERROR</div>
+    <div id="analystRows" style="margin-top:13px;display:flex;flex-direction:column;gap:9px"></div>
+  </div>
+  <div class="mono" id="discussClock" style="font-size:38px;font-weight:800;margin-top:28px">0:45</div>
+</section>
+
+<!-- =========================== VOTE ============================= -->
+<section class="screen vote" id="s-vote">
+  <div class="eyebrow">FINAL VOTE</div>
+  <h2>Who is the Imposter?</h2>
+  <div class="vote-sub">Tap a name. You can change it until time runs out.</div>
+  <div class="vote-grid" id="voteGrid"></div>
+  <div class="mono" id="voteClock" style="text-align:center;font-size:30px;font-weight:800;margin-top:18px">0:30</div>
+</section>
+
+<!-- ========================== RESULTS =========================== -->
+<section class="screen wait" id="s-results">
+  <div class="eyebrow" id="resEyebrow">RESULT</div>
+  <h2 id="resTitle" style="font-size:40px;margin-top:10px">—</h2>
+  <p id="resReason">—</p>
+  <p style="margin-top:28px;font-size:12.5px;color:var(--text-mute)">Check the big screen for the full reveal.</p>
+</section>
+
+<script src="/static/js/avatars.js"></script>
+<script src="/static/js/jetparts.js"></script>
+<script src="/static/js/dogfightclient.js"></script>
+<script src="/static/js/tetris.js"></script>
+<script src="/static/js/quizmode.js"></script>
+<script src="/static/js/motion.js"></script>
+<script src="/static/js/player.js"></script>
+</body>
+</html>
