@@ -393,6 +393,33 @@ body.urgent::after {
 @media (max-width: 1000px) { .results-lower { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .pod { animation: none; opacity: 1; } .pod-crown { animation: none; } }
 
+
+/* ---------- saved question banks ---------- */
+.saved-banks { margin: 0 0 14px; }
+.sb-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 9px; }
+.sb-head span:first-child { font-family: var(--arcade); font-size: 8px; color: var(--text-dim); }
+.sb-hint { font: 800 8px var(--font); letter-spacing: .14em; color: var(--text-mute); }
+.sb-list { display: flex; flex-direction: column; gap: 6px; max-height: 196px; overflow-y: auto; }
+.sb-item { display: grid; grid-template-columns: 1fr auto 30px; align-items: center; gap: 8px;
+  padding: 8px 8px 8px 11px; background: #04060a; border: 2px solid #141a28; border-radius: 3px; }
+.sb-item.active { border-color: var(--neon-2); box-shadow: inset 3px 0 0 var(--neon-2); }
+.sb-main { min-width: 0; }
+.sb-title { font: 800 12.5px var(--font); color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-meta { font: 700 9.5px var(--mono); color: var(--text-mute); margin-top: 4px; }
+.sb-use { cursor: pointer; padding: 7px 12px; border-radius: 3px; font-family: var(--arcade); font-size: 8px;
+  color: #fff; background: linear-gradient(180deg, #4f97ff, #2b6fd6); border: 0; box-shadow: 0 3px 0 #133d7d; }
+.sb-use:active { transform: translateY(2px); box-shadow: 0 1px 0 #133d7d; }
+.sb-live { font-family: var(--arcade); font-size: 7.5px; color: var(--neon-2); padding: 0 4px; }
+.sb-del { width: 30px; height: 30px; cursor: pointer; border-radius: 3px; font-size: 12px;
+  color: var(--text-mute); background: transparent; border: 2px solid #1c2334; }
+.sb-del:hover { color: #ff9ea1; border-color: rgba(229,72,77,.6); }
+.sb-use:disabled, .sb-del:disabled { opacity: .4; cursor: default; }
+.sb-empty { font-size: 11.5px; line-height: 1.5; color: var(--text-mute); padding: 10px 12px;
+  background: #04060a; border: 2px dashed #1c2334; border-radius: 3px; }
+.sb-or { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+.sb-or::before, .sb-or::after { content: ''; flex: 1; height: 2px; background: #141a28; }
+.sb-or span { font-family: var(--arcade); font-size: 7.5px; color: var(--text-mute); }
+
 /* ---------- discussion / vote / fight / results ---------- */
 #viewDiscuss .eyebrow, #viewVote .eyebrow, #viewFight .eyebrow { font-family: var(--arcade); font-size: 12px; color: var(--neon-3); }
 .arena-wrap { border: 3px solid var(--cab-edge); border-radius: 6px; box-shadow: 0 6px 0 var(--cab-drop); }
@@ -491,6 +518,12 @@ body.urgent::after {
             <li>Clear a level → earn a jet part. Higher levels pay rarer parts.</li>
             <li>Part you can't use? Claim it or shove it to a neighbour for a tier bump. A timed-out crate is just scrapped.</li>
           </ul>
+        </div>
+
+        <div class="saved-banks ai-question-only" id="savedBanksWrap">
+          <div class="sb-head"><span id="savedBanksTitle">SAVED TRIVIA BANKS</span><span class="sb-hint">KEPT IN THIS BROWSER</span></div>
+          <div class="sb-list" id="savedBanks"></div>
+          <div class="sb-or"><span>OR GENERATE A NEW ONE</span></div>
         </div>
 
         <div class="ai-row ai-question-only" id="aiTopicRow">
@@ -800,10 +833,22 @@ function handle(m) {
     // until a bank is generated, so only snap the tab when the server says arcade
     // or when we are showing arcade but the server has left it.
     const serverArcade = m.questionBank?.mode === 'arcade';
+    const serverMode = m.questionBank?.mode;
     if (!AI_BANK.switching) {
       if (serverArcade && AI_BANK.mode !== 'arcade') paintAiMode('arcade');
+      else if ((serverMode === 'trivia' || serverMode === 'study') && AI_BANK.mode !== serverMode) paintAiMode(serverMode);
       else if (!serverArcade && AI_BANK.mode === 'arcade') paintAiMode('trivia');
     }
+    // A brand-new room starts on the built-in deck: put the host's last-used
+    // saved bank straight in, so nobody has to regenerate per room.
+    if (!BANKS.autoTried && m.phase === 'lobby' && serverMode === 'default' && !m.questionBank?.busy) {
+      BANKS.autoTried = true;
+      let tab = 'trivia';
+      try { tab = localStorage.getItem(BANKS.lastKey + 'tab') || 'trivia'; } catch (e) {}
+      const last = (tab === 'trivia' || tab === 'study') ? lastBankFor(tab) : null;
+      if (last) { paintAiMode(tab); useSavedBank(last.id); }
+    }
+    renderSavedBanks();
     document.body.classList.toggle('is-arcade-round', !!m.arcade);
     ARCADE.on = !!m.arcade;
     if (m.arcadeBoard) paintLadder(m.arcadeBoard);
@@ -821,6 +866,8 @@ function handle(m) {
     if (!AI_BANK.busy || AI_BANK.serverBusy) $('aiBankStatus').textContent = bank ?
       (bank.error ? `ERROR: ${bank.error}` :
       serverArcade ? 'ARCADE LADDER ARMED · 5 GAMES · NO API KEY NEEDED' :
+      (AI_BANK.mode === 'study' && serverMode !== 'study' && !AI_BANK.serverBusy)
+        ? 'NO STUDY BANK LOADED — PICK A SAVED ONE OR UPLOAD A PDF' :
       AI_BANK.serverBusy ? `GENERATING QUESTIONS · ${count}/${target} READY` :
       `${bank.title} · ${bank.count} QUESTIONS READY`) : 'BUILT-IN TRIVIA READY';
     const humans = m.players.filter(p => !p.bot).length;
@@ -906,6 +953,8 @@ function handle(m) {
     $('feed').prepend(el);
     while ($('feed').children.length > 6) $('feed').lastChild.remove();
   }
+
+  if (m.t === 'bank_saved') rememberBank(m.bank);
 
   if (m.t === 'arcade_board') paintLadder(m.rows);
 
@@ -1515,22 +1564,14 @@ function paintAiMode(mode) {
     : { easy: 'EASY', medium: 'MEDIUM', hard: 'HARD' };
   [...$('aiLevel').options].forEach(o => { o.textContent = labels[o.value] || o.textContent; });
   if (mode === 'arcade') drawArcadePreviews();
+  renderSavedBanks();
 }
 
-/**
- * Pick a tab. Arcade is a server-side switch — it needs no generation, so
- * choosing it arms the next match immediately. Leaving arcade for a question
- * tab tells the server to fall back to the built-in deck until a new bank is
- * generated.
- */
-async function chooseAiMode(mode) {
-  if (!AI_BANK.editable || AI_BANK.serverBusy) return;
-  const wasArcade = AI_BANK.current?.mode === 'arcade';
-  paintAiMode(mode);
-  if (mode !== 'arcade' && !wasArcade) return;
+/** Tell the server to play arcade, or plain built-in trivia (no saved bank). */
+async function setRoomMode(mode, fallbackTab) {
   AI_BANK.switching = true;
   const form = new FormData();
-  form.append('mode', mode === 'arcade' ? 'arcade' : 'default');
+  form.append('mode', mode);
   try {
     const res = await fetch(`/api/room/${encodeURIComponent(ROOM)}/mode`,
       { method: 'POST', body: form, headers: { 'X-Scramble-Host-Token': HOST_TOKEN } });
@@ -1538,11 +1579,116 @@ async function chooseAiMode(mode) {
     if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Could not switch mode');
   } catch (e) {
     $('aiBankStatus').textContent = `ERROR: ${e.message}`;
-    paintAiMode(wasArcade ? 'arcade' : 'trivia');
+    if (fallbackTab) paintAiMode(fallbackTab);
   } finally {
     AI_BANK.switching = false;
   }
 }
+
+/**
+ * Pick a tab. Trivia and Study each have their own saved library: switching
+ * to one loads the last bank used on that tab (no AI call, no wait). With
+ * nothing saved for that tab, the room falls back to the built-in deck until
+ * a bank is generated. Arcade needs no bank at all.
+ */
+async function chooseAiMode(mode) {
+  if (!AI_BANK.editable || AI_BANK.serverBusy) return;
+  const prev = AI_BANK.mode;
+  paintAiMode(mode);
+  if (mode === 'arcade') return setRoomMode('arcade', prev);
+  const last = lastBankFor(mode);
+  if (last) return useSavedBank(last.id);
+  const cur = AI_BANK.current && AI_BANK.current.mode;
+  if (cur && cur !== 'default' && cur !== mode) return setRoomMode('default', prev);
+}
+/* ----------------------- saved question banks -----------------------
+   Every bank this host generates is kept in this browser (localStorage), so
+   any future room on this computer can reuse it instantly. Trivia and Study
+   are separate libraries. The server's disk isn't used because Render wipes
+   it on every deploy and restart. */
+const BANKS = { key: 'scramble_banks_v1', lastKey: 'scramble_last_bank_', max: 40, autoTried: false };
+function loadBanks() {
+  try { const v = JSON.parse(localStorage.getItem(BANKS.key) || '[]'); return Array.isArray(v) ? v : []; }
+  catch (e) { return []; }
+}
+function storeBanks(list) {
+  // If the browser is out of space, drop the oldest banks until it fits.
+  list = list.slice(0, BANKS.max);
+  while (list.length) {
+    try { localStorage.setItem(BANKS.key, JSON.stringify(list)); return true; }
+    catch (e) { list.pop(); }
+  }
+  try { localStorage.removeItem(BANKS.key); } catch (e) {}
+  return false;
+}
+function lastBankFor(mode) {
+  let id = null;
+  try { id = localStorage.getItem(BANKS.lastKey + mode); } catch (e) {}
+  const list = loadBanks().filter(b => b.mode === mode);
+  return list.find(b => b.id === id) || null;
+}
+function markLast(bank) {
+  try { localStorage.setItem(BANKS.lastKey + bank.mode, bank.id); localStorage.setItem(BANKS.lastKey + 'tab', bank.mode); } catch (e) {}
+}
+function rememberBank(bank) {
+  if (!bank || !bank.id || !Array.isArray(bank.questions)) return;
+  const list = loadBanks().filter(b => b.id !== bank.id);
+  list.unshift(bank);
+  if (!storeBanks(list)) $('aiBankStatus').textContent = 'BANK READY — BUT THIS BROWSER IS OUT OF SPACE TO SAVE IT';
+  markLast(bank);
+  renderSavedBanks();
+}
+async function useSavedBank(id) {
+  const bank = loadBanks().find(b => b.id === id);
+  if (!bank || !AI_BANK.editable || AI_BANK.serverBusy) return;
+  AI_BANK.switching = true;
+  $('aiBankStatus').textContent = `LOADING ${bank.title.toUpperCase()}…`;
+  try {
+    const res = await fetch(`/api/room/${encodeURIComponent(ROOM)}/bank`, {
+      method: 'POST', body: JSON.stringify(bank),
+      headers: { 'Content-Type': 'application/json', 'X-Scramble-Host-Token': HOST_TOKEN } });
+    const data = await res.json();
+    if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Could not load that bank');
+    markLast(bank);
+  } catch (e) {
+    $('aiBankStatus').textContent = `ERROR: ${e.message}`;
+  } finally {
+    AI_BANK.switching = false;
+  }
+}
+function deleteSavedBank(id) {
+  const bank = loadBanks().find(b => b.id === id);
+  if (!bank || !window.confirm(`Delete the saved bank "${bank.title}"? This can't be undone.`)) return;
+  storeBanks(loadBanks().filter(b => b.id !== id));
+  renderSavedBanks();
+}
+function renderSavedBanks() {
+  const el = $('savedBanks');
+  if (!el || AI_BANK.mode === 'arcade') return;
+  const mode = AI_BANK.mode;
+  $('savedBanksTitle').textContent = mode === 'study' ? 'SAVED STUDY BANKS' : 'SAVED TRIVIA BANKS';
+  const list = loadBanks().filter(b => b.mode === mode);
+  const active = AI_BANK.current && AI_BANK.current.id;
+  const lvl = { trivia: { easy: 'EASY', medium: 'MEDIUM', hard: 'HARD' },
+                study: { easy: 'SHAKY', medium: 'STEADY', hard: 'CONFIDENT' } }[mode];
+  const when = t => { try { return new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); } catch (e) { return ''; } };
+  el.innerHTML = list.length ? list.map(b => `
+    <div class="sb-item${b.id === active ? ' active' : ''}">
+      <div class="sb-main">
+        <div class="sb-title">${esc(b.title)}</div>
+        <div class="sb-meta">${lvl[b.level] || ''} · ${b.questions.length} Q · ${esc((b.provider || '').toUpperCase())} · ${when(b.created)}</div>
+      </div>
+      ${b.id === active ? '<span class="sb-live">IN USE</span>'
+        : `<button type="button" class="sb-use" data-id="${esc(b.id)}">USE</button>`}
+      <button type="button" class="sb-del" data-id="${esc(b.id)}" aria-label="Delete ${esc(b.title)}" title="Delete">✕</button>
+    </div>`).join('')
+    : `<div class="sb-empty">No saved ${mode} banks yet. Generate one below — it's saved here automatically.</div>`;
+  el.querySelectorAll('.sb-use').forEach(b => { b.onclick = () => useSavedBank(b.dataset.id); });
+  el.querySelectorAll('.sb-del').forEach(b => { b.onclick = () => deleteSavedBank(b.dataset.id); });
+  const lock = !AI_BANK.editable || AI_BANK.busy || AI_BANK.serverBusy;
+  el.querySelectorAll('button').forEach(b => { b.disabled = lock; });
+}
+
 $('aiTabTrivia').onclick = () => chooseAiMode('trivia');
 $('aiTabStudy').onclick = () => chooseAiMode('study');
 $('aiTabArcade').onclick = () => chooseAiMode('arcade');

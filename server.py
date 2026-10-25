@@ -345,6 +345,7 @@ class Room:
     generation_stage: str = ""
     generation_target: int = 100
     lobby_bots: int = 0          # stand-in pilots the host has seated
+    question_bank_id: str = ""   # id of the saved bank in play, if any
 
     def s(self, key: str) -> int:
         return self.settings.get(key, _defaults()[key])
@@ -424,6 +425,7 @@ def bank_public(r: Room) -> dict:
                 "error": r.generation_error, "generated": 0,
                 "target": 0, "stage": ""}
     return {"mode": r.question_mode, "level": r.question_level,
+            "id": r.question_bank_id if r.question_deck else "",
             "title": (r.question_deck or {}).get("title", "Built-in trivia"),
             "count": len((r.question_deck or quizmod.load_deck())["questions"]),
             "busy": r.generation_busy, "error": r.generation_error,
@@ -2275,10 +2277,70 @@ async def set_room_mode(code: str, request: Request, mode: str = Form(...)):
         raise HTTPException(400, "Choose arcade or default")
     room.question_mode = mode
     room.generation_error = ""
-    if mode == "arcade":
-        room.question_deck = None
+    room.question_deck = None if mode in ("arcade", "default") else room.question_deck
+    room.question_bank_id = ""
     await push_state(room)
     return {"ok": True, "mode": room.question_mode}
+
+
+def clean_saved_bank(raw: dict) -> dict:
+    """
+    Check a bank the host's browser sends back before it goes anywhere near a
+    game. It came from our own generator, but it has sat in browser storage,
+    so it is treated like any other input.
+    """
+    if not isinstance(raw, dict):
+        raise HTTPException(400, "Bank must be an object")
+    mode = str(raw.get("mode", "")).lower()
+    level = str(raw.get("level", "")).lower()
+    if mode not in ("trivia", "study") or level not in ("easy", "medium", "hard"):
+        raise HTTPException(400, "Bank has an invalid mode or level")
+    qs = raw.get("questions")
+    if not isinstance(qs, list) or not 1 <= len(qs) <= 200:
+        raise HTTPException(400, "Bank must have 1-200 questions")
+    clean = []
+    for q in qs:
+        if (not isinstance(q, dict) or not isinstance(q.get("q"), str)
+                or not q["q"].strip() or len(q["q"]) > 600
+                or not isinstance(q.get("options"), list) or len(q["options"]) != 4
+                or not all(isinstance(o, str) and o.strip() and len(o) <= 300
+                           for o in q["options"])
+                or type(q.get("answer")) is not int or q["answer"] not in range(4)):
+            raise HTTPException(400, "A saved question is malformed")
+        clean.append({"q": q["q"].strip(),
+                      "options": [o.strip() for o in q["options"]],
+                      "answer": q["answer"]})
+    bank_id = str(raw.get("id", ""))[:40]
+    return {"id": bank_id, "mode": mode, "level": level,
+            "deck": {"title": str(raw.get("title") or "Saved bank")[:100],
+                     "description": str(raw.get("description") or "")[:200],
+                     "questions": clean}}
+
+
+@app.post("/api/room/{code}/bank")
+async def use_saved_bank(code: str, request: Request):
+    """Put a bank from the host's saved library into this room. No AI call."""
+    room = ROOMS.get(code.upper())
+    if not room:
+        raise HTTPException(404, "Room not found")
+    if not hmac.compare_digest(request.headers.get('x-scramble-host-token', ''), room.host_token):
+        raise HTTPException(403, "Host authorization required")
+    if room.phase not in ("lobby", "results"):
+        raise HTTPException(409, "Question banks may only change in the lobby or after a dogfight")
+    if room.generation_busy:
+        raise HTTPException(409, "A question bank is still generating")
+    try:
+        raw = await request.json()
+    except Exception:
+        raise HTTPException(400, "Send the bank as JSON")
+    bank = clean_saved_bank(raw)
+    room.question_deck = bank["deck"]
+    room.question_mode, room.question_level = bank["mode"], bank["level"]
+    room.question_bank_id = bank["id"]
+    room.generation_error = ""
+    room.generation_stage = ""
+    await push_state(room)
+    return {"ok": True, "id": bank["id"], "count": len(bank["deck"]["questions"])}
 
 
 @app.post("/api/room/{code}/questions")
@@ -2301,10 +2363,15 @@ async def generate_questions(code: str, request: Request, mode: str = Form(...),
     if count not in (10, 20, 30, 50, 75, 100):
         raise HTTPException(400, "Choose 10, 20, 30, 50, 75, or 100 questions")
     pdf_data = None
+    pdf_name = ""
     if mode == "study":
         if not pdf or not pdf.filename.lower().endswith('.pdf'):
             raise HTTPException(400, "Upload a PDF for study mode")
         pdf_data = await pdf.read(8 * 1024 * 1024 + 1)
+        # name the bank after the file, so a saved library of study banks
+        # reads "AERSP 410 Lecture 7", not ten copies of "Lecture Notes"
+        pdf_name = os.path.splitext(os.path.basename(pdf.filename))[0]
+        pdf_name = " ".join(pdf_name.replace("_", " ").replace("-", " ").split())[:80]
         if len(pdf_data) > 8 * 1024 * 1024 or not pdf_data.startswith(b'%PDF-'):
             raise HTTPException(400, "PDF must be valid and under 8 MB")
     elif not topic.strip() or len(topic) > 180:
@@ -2328,11 +2395,23 @@ async def generate_questions(code: str, request: Request, mode: str = Form(...),
                 loop.call_soon_threadsafe(deliver)
             deck = await asyncio.to_thread(grok_questions.generate_bank,
                                            mode, level, topic, pdf_data, on_progress, count, provider)
+            if mode == "study" and pdf_name:
+                deck["title"] = "Study: " + pdf_name
             room.generation_count = count
             room.generation_stage = f"Completed — {count} questions ready"
             if room.phase in ("lobby", "results"):
                 room.question_deck = deck
                 room.question_mode, room.question_level = mode, level
+                room.question_bank_id = secrets.token_hex(8)
+                # The host's browser keeps a library of every bank it has
+                # generated, so future rooms can reuse them without paying
+                # for another AI request. Hosts only — the answer keys are in it.
+                await broadcast_hosts(room, {"t": "bank_saved", "bank": {
+                    "id": room.question_bank_id, "mode": mode, "level": level,
+                    "provider": provider, "created": int(time.time() * 1000),
+                    "title": deck.get("title", ""),
+                    "description": deck.get("description", ""),
+                    "questions": deck["questions"]}})
             else:
                 room.generation_error = "Game began during generation; old bank was preserved"
         except Exception as exc:
