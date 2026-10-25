@@ -2047,3 +2047,13 @@ button.howto-btn { appearance: none; }
 .screen.mini > .mg-canvas { flex: 1 1 0; flex-shrink: 1 !important; min-height: 140px; height: 0; }
 .screen.mini > .mg-result { min-height: 38px; }
 .screen.mini > .mg-flip { padding: 6px 12px; font-size: 9px; }
+
+/* phone: shown when the host removes this player */
+.kicked-note {
+  position: fixed; inset: 0; z-index: 200; display: none; flex-direction: column;
+  align-items: center; justify-content: center; gap: 16px; padding: 24px; text-align: center;
+  background: rgba(5,7,12,.96);
+}
+.kicked-note.on { display: flex; }
+.kicked-note .kn-t { font-family: var(--arcade); font-size: 22px; color: var(--danger); }
+.kicked-note .kn-b { font-size: 14px; line-height: 1.6; color: var(--text-dim); }

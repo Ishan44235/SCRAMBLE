@@ -72,6 +72,7 @@ function connect() {
   };
   ws.onmessage = e => handle(JSON.parse(e.data));
   ws.onclose = () => {
+    if (STATE.kicked) return;          // removed by the host: stay disconnected
     toast('RECONNECTING…', 'warn');
     setTimeout(connect, 1200);
   };
@@ -83,6 +84,15 @@ function send(o) {
 /* ---------------------------------------------------------- inbound */
 function handle(m) {
   switch (m.t) {
+
+    case 'kicked':
+      // The host disconnected this phone. Stop reconnecting and go back to the
+      // start screen; scanning the QR code again rejoins the lobby.
+      STATE.kicked = true;
+      try { localStorage.removeItem('tc_pid'); } catch (e) {}
+      $('kickedNote').classList.add('on');
+      setTimeout(() => location.replace('/'), 3500);
+      break;
 
     case 'join_error':
       toast(m.reason, 'bad');

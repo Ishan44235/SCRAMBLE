@@ -501,6 +501,31 @@ def add_bots(r: Room, target: int):
             break
 
 
+async def kick_player(r: Room, pid: str):
+    """
+    The host removes someone from the lobby.
+
+    A bot just leaves its seat. A phone is told it was removed and its socket
+    is closed; the phone then stops its automatic reconnect. Nothing is
+    remembered here — it is a disconnect, not a ban — so scanning the QR code
+    again puts them straight back in the lobby.
+    """
+    p = r.players.get(pid)
+    if not p:
+        return
+    r.players.pop(pid, None)
+    if p.is_bot:
+        r.lobby_bots = len([q for q in r.players.values() if q.is_bot])
+    else:
+        if p.ws:
+            await send(p.ws, {"t": "kicked"})
+            try:
+                await p.ws.close()
+            except Exception:
+                pass
+    await push_state(r)
+
+
 def humans_seated(r: Room) -> int:
     return len([p for p in r.players.values() if p.joined and not p.is_bot])
 
@@ -2087,6 +2112,11 @@ async def ws_endpoint(ws: WebSocket):
             if t == "reset":
                 if is_host and ws in room.hosts:
                     await reset_to_lobby(room)
+                continue
+
+            if t == "kick":
+                if is_host and ws in room.hosts and room.phase in ("lobby", "results"):
+                    await kick_player(room, str(msg.get("pid", "")))
                 continue
 
             if t == "bots":

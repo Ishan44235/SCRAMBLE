@@ -294,6 +294,21 @@ body.urgent::after {
 .host-logo:hover { background: rgba(62,143,255,.1); }
 .host-logo:focus-visible { outline: 2px solid #b7d8ff; outline-offset: 2px; }
 
+/* ---------- remove a pilot from the lobby ---------- */
+#viewLobby .roster-card { position: relative; }
+.roster-card.is-bot { opacity: .6; }
+.rc-bot { font-size: 9px; color: var(--text-mute); letter-spacing: .14em; margin-left: 4px; }
+.rc-kick {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 6px;
+  font-family: var(--arcade); font-size: 9px; color: #fff; cursor: pointer;
+  background: rgba(150,30,36,.92); border: 2px solid #ff6b70; border-radius: 3px;
+  opacity: 0; pointer-events: none; transition: opacity .12s;
+}
+.roster-card.kickable:hover .rc-kick, .roster-card.kickable:focus-within .rc-kick,
+.rc-kick:focus-visible { opacity: 1; pointer-events: auto; }
+.rc-kick:focus-visible { outline: 2px solid #ffd48a; outline-offset: 2px; }
+.roster-card.leaving { opacity: .25; pointer-events: none; }
+
 /* ---------- bot stepper ---------- */
 .bot-ctl { margin-left: auto; display: flex; align-items: center; gap: 8px;
   padding: 5px 6px 5px 11px; background: #04060a; border: 2px solid var(--cab-edge); border-radius: 4px; }
@@ -1195,12 +1210,24 @@ function renderLobbyBoard(players) {
 }
 
 function paintRoster(players) {
+  // Hover (or tab to) a pilot in the lobby to reveal REMOVE.
+  const canKick = phase === 'lobby' || phase === 'results';
   $('rosterGrid').innerHTML = players.map(p => `
-    <div class="card roster-card" ${p.bot ? 'style="opacity:.55"' : ''}>
+    <div class="card roster-card${p.bot ? ' is-bot' : ''}${canKick ? ' kickable' : ''}" data-pid="${esc(p.pid)}">
       ${avatarSVG(p.avatar || 'fox', 34, { bg: '#0b0d14' })}
-      <div class="rc-name">${p.name}${p.bot ? ' <span style="font-size:10px;color:var(--text-mute);letter-spacing:.14em">BOT</span>' : ''}</div>
+      <div class="rc-name">${esc(p.name)}${p.bot ? ' <span class="rc-bot">BOT</span>' : ''}</div>
       ${p.answered && !p.bot ? '<div class="rc-score" style="color:var(--good)">✓</div>' : ''}
+      ${canKick ? `<button type="button" class="rc-kick" data-pid="${esc(p.pid)}" data-name="${esc(p.name)}"
+         aria-label="Remove ${esc(p.name)} from the lobby" title="Remove from lobby">✕ REMOVE</button>` : ''}
     </div>`).join('');
+  $('rosterGrid').querySelectorAll('.rc-kick').forEach(b => {
+    b.onclick = e => {
+      e.stopPropagation();
+      if (!window.confirm(`Remove ${b.dataset.name} from the lobby?`)) return;
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'kick', pid: b.dataset.pid }));
+      b.closest('.roster-card').classList.add('leaving');
+    };
+  });
 }
 
 /* =================== THE CIRCLE OF PILOTS ==================== */
