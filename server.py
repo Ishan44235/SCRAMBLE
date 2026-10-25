@@ -1,9 +1,14 @@
 """
-TRENCHCOAT — hidden-role Tetris for phones.
+MERGE CONFLICT AT MACH 2 — server
 
-Run:  python server.py
-Then open the printed URL on your laptop (host display) and have players
-scan the QR code with their phones.
+A retro pixel arcade party game for phones in one room.
+
+  home     -> HOST GAME or JOIN GAME with a 4-letter room code
+  quiz     -> answer trivia, earn fighter jet parts, pass what you don't know
+  vote     -> the table marks one pilot as THE THREAT
+  dogfight -> everyone flies the jet they built
+
+Every room is independent, so several groups can play on one server.
 """
 
 import asyncio
@@ -13,148 +18,173 @@ import math
 import os
 import random
 import socket
+import string
 import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 import qrcode
 import uvicorn
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 
 import quiz as quizmod
 import parts as partsmod
 import dogfight as dogfightmod
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, Response
-from fastapi.staticfiles import StaticFiles
 
-# ----------------------------------------------------------------------------
-# CONFIG — tune the whole game from here
-# ----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# CONFIG
+# ---------------------------------------------------------------------------
 
-PORT = 8000
+PORT = int(os.environ.get("PORT", 8000))
 
-ROUND_SECONDS = 60          # length of each Tetris round
-ROUNDS = 3                  # rounds before the final vote
-POWERS_PER_ROUND = 3        # card draws spread evenly through each round
-DISCUSSION_SECONDS = 45     # talking time before the vote
-VOTE_SECONDS = 30           # time to lock in an accusation
+ROUND_SECONDS = 60
+ROUNDS = 3
+POWERS_PER_ROUND = 3
+INTERMISSION_SECONDS = 5
+DISCUSSION_SECONDS = 45
+VOTE_SECONDS = 30
+FIGHT_SECONDS = 75
 
-INTERMISSION_SECONDS = 5    # break between rounds showing the pass tally
+FIGHT_HZ = 30
+PHONE_EVERY = 3
 
-GAME_MODE = "tetris"        # "tetris" or "quiz"
-CHEAT_TARGET = 0.60         # Cheat wins on objective if accuracy falls below this
-
-FIGHT_SECONDS = 75          # length of the closing dogfight
-FIGHT_HZ = 30               # simulation rate
-PHONE_EVERY = 3             # send phones every Nth frame; hosts get all of them
-
-MIN_PLAYERS = 3             # real phones needed for a normal game
-SOLO_FILL_TO = 4            # solo test mode pads the table to this many
+MIN_PLAYERS = 3
+SOLO_FILL_TO = 4
 BOT_NAMES = ["RIVAL", "GHOST", "NOMAD", "CIPHER", "ECHO", "VAGRANT"]
 
-# must match the ids in static/js/avatars.js
 AVATAR_IDS = ["fox", "cat", "frog", "bear", "panda",
               "owl", "penguin", "bunny", "axolotl", "shiba"]
 
-IMPOSTER_QUOTA = 12         # passes the Imposter must make to win on objective
-DETECTIVE_TRACES = 2        # how many times the Detective can trace a pass
-MULE_ABSORBS = 3            # silent absorbs per round
+ROOM_IDLE_SECONDS = 60 * 60      # reap rooms nobody has touched in an hour
 
-# Powers and handicaps. `dur` of 0 means "until consumed" rather than timed.
-POWERS = [
-    {"id": "forge",  "name": "Piece Forge",   "kind": "power",
-     "icon": "forge", "dur": 0,
-     "desc": "Shake to cycle pieces, tilt to lock the one you want."},
-    {"id": "mirror", "name": "Mirror Shield", "kind": "power",
-     "icon": "shield", "dur": 5,
-     "desc": "Incoming passes bounce back with +1 heat."},
-    {"id": "freepass", "name": "Free Pass",   "kind": "power",
-     "icon": "ghost", "dur": 0,
-     "desc": "One pass with no heat and no arrival animation."},
-    {"id": "stuck",  "name": "Stuck With It", "kind": "handicap",
+# ---------------------------------------------------------------------------
+# CARDS
+# ---------------------------------------------------------------------------
+
+CARDS = [
+    {"id": "mystery", "name": "Mystery Crate", "kind": "power",
+     "icon": "crate", "dur": 0,
+     "desc": "A sealed crate. You find out what's inside in the hangar."},
+    {"id": "fifty", "name": "Fifty-Fifty", "kind": "power",
+     "icon": "split", "dur": 0,
+     "desc": "Two wrong answers burn away on your current question."},
+    {"id": "tailwind", "name": "Tailwind", "kind": "power",
+     "icon": "wind", "dur": 0,
+     "desc": "Your next correct answer drops as if the question were red hot."},
+    {"id": "deflector", "name": "Deflector", "kind": "power",
+     "icon": "shield", "dur": 6,
+     "desc": "Questions passed to you bounce straight back, hotter."},
+
+    {"id": "rust", "name": "Rust", "kind": "handicap",
+     "icon": "rust", "dur": 0,
+     "desc": "One part already on your jet corrodes down a tier."},
+    {"id": "locked", "name": "Locked Bay", "kind": "handicap",
      "icon": "lock", "dur": 0,
-     "desc": "Your next piece cannot be passed. Live with it."},
-    {"id": "hothands", "name": "Hot Hands",   "kind": "handicap",
+     "desc": "You cannot pass this question. Answer it."},
+    {"id": "hothands", "name": "Hot Hands", "kind": "handicap",
      "icon": "fire", "dur": 0, "charges": 2,
-     "desc": "You must pass your next 2 pieces. No placing."},
-    {"id": "drunk",  "name": "Drunk Tilt",    "kind": "handicap",
-     "icon": "swirl", "dur": 5,
-     "desc": "Your tilt controls are inverted."},
+     "desc": "You must pass your next 2 questions unanswered."},
+    {"id": "blindspot", "name": "Blind Spot", "kind": "handicap",
+     "icon": "eye", "dur": 0,
+     "desc": "The answers stay hidden for the first 3 seconds."},
 ]
 
-# Quiz-mode names for the same six cards.
-QUIZ_POWER_COPY = {
-    "forge":    {"name": "Fifty-Fifty",
-                 "desc": "Two wrong answers burn away. Pick from what's left."},
-    "mirror":   {"name": "Mirror Shield",
-                 "desc": "Questions passed to you bounce back, hotter."},
-    "freepass": {"name": "Free Pass",
-                 "desc": "Pass one question with your name hidden."},
-    "stuck":    {"name": "Stuck With It",
-                 "desc": "You cannot pass this one. Answer it."},
-    "hothands": {"name": "Hot Hands",
-                 "desc": "You must pass your next 2 questions unanswered."},
-    "drunk":    {"name": "Drunk Tilt",
-                 "desc": "Your aiming axes are inverted."},
-}
+# ---------------------------------------------------------------------------
+# AGENDAS — secret objectives. Nobody is a traitor; everyone has a private
+# reason to behave oddly, which is what keeps the table reading each other.
+# ---------------------------------------------------------------------------
 
-ROLE_LIB = {
-    "imposter": {
-        "name": "THE IMPOSTER",
-        "team": "imposter",
-        "tagline": "Dump the garbage. Don't get caught.",
-        "goal": (
-            f"Pass {IMPOSTER_QUOTA} pieces before the final vote without being "
-            "identified. You have Clean Passes that arrive with no animation — "
-            "spend them when it matters."
-        ),
-        "color": "#e5484d",
-    },
-    "mule": {
-        "name": "THE MULE",
-        "team": "imposter",
-        "tagline": "You know who they are. They don't know you.",
-        "goal": (
-            "You win if the Imposter wins. You can silently absorb incoming "
-            f"passes {MULE_ABSORBS} times a round so they can dump on you safely. "
-            "Nobody knows you exist."
-        ),
+MAGPIE_BONUS = 250
+DUELIST_PER_KILL = 120
+SCAVENGER_PER_PART = 80
+MECHANIC_BONUS = 150
+INSPECTOR_BONUS = 180
+QUARTERMASTER_PER_PART = 40
+FEATHERWEIGHT_BONUS = 200
+FEATHERWEIGHT_MAX_SLOTS = 3
+THREAT_BOUNTY = 3
+
+AGENDAS = {
+    "magpie": {
+        "name": "THE MAGPIE", "short": "The Shiny Thief",
+        "tagline": "The rarest thing at the table is yours.",
+        "goal": (f"Finish holding the single rarest part anyone has, worth "
+                 f"{MAGPIE_BONUS}. Chase the hot questions — and accept that "
+                 f"everyone can see you doing it."),
         "color": "#f5a524",
     },
-    "detective": {
-        "name": "THE DETECTIVE",
-        "team": "crew",
-        "tagline": "Follow the pieces. Find the hand.",
-        "goal": (
-            f"Name the Imposter at the vote. Shake hard to TRACE the true origin "
-            f"of the last piece you received — you only get {DETECTIVE_TRACES}."
-        ),
-        "color": "#3e8fff",
+    "duelist": {
+        "name": "THE DUELIST", "short": "The Dogfight Ace",
+        "tagline": "One name. Nothing else matters.",
+        "goal": (f"You have one secret rival. Every time you shoot them down "
+                 f"you score {DUELIST_PER_KILL}. Kills on anyone else earn you "
+                 f"nothing extra."),
+        "color": "#e5484d",
     },
-    "builder": {
-        "name": "THE BUILDER",
-        "team": "crew",
-        "tagline": "Clear lines. Trust nobody.",
-        "goal": (
-            "Survive and clear lines. You have no special powers and no secret "
-            "knowledge — but your vote counts exactly as much as anyone's."
-        ),
+    "scavenger": {
+        "name": "THE SCAVENGER", "short": "The Scrap Baron",
+        "tagline": "Their wreckage is your parts bin.",
+        "goal": (f"Shoot someone down and you tear a part off their jet and "
+                 f"bolt it onto yours mid-fight. Each one is worth "
+                 f"{SCAVENGER_PER_PART}. Hunt the best-equipped pilot."),
         "color": "#30a46c",
     },
-    "analyst": {
-        "name": "THE ANALYST",
-        "team": "crew",
-        "tagline": "The numbers almost tell you something.",
-        "goal": (
-            "At the vote you see every player's pass count — but each number is "
-            "off by up to 3. Enough to argue with, not enough to prove."
-        ),
+    "mechanic": {
+        "name": "THE MECHANIC", "short": "The Grease Wizard",
+        "tagline": "A fair trade, whether they like it or not.",
+        "goal": (f"During the discussion you force a one-for-one part swap with "
+                 f"any pilot — you pick both bays, they get no say. Worth "
+                 f"{MECHANIC_BONUS} if you end up with the better jet."),
+        "color": "#3e8fff",
+    },
+    "inspector": {
+        "name": "THE INSPECTOR", "short": "The Parts Inspector",
+        "tagline": "Open the panel. See what's really in there.",
+        "goal": (f"Once per game you can strip-inspect any pilot and see their "
+                 f"exact loadout. Worth {INSPECTOR_BONUS} if the pilot you "
+                 f"inspected is the one the table marks as the Threat."),
         "color": "#8e4ec6",
+    },
+    "quartermaster": {
+        "name": "THE QUARTERMASTER", "short": "The Supply Line",
+        "tagline": "Generous, and quietly counting.",
+        "goal": (f"You score {QUARTERMASTER_PER_PART} for every part fitted by "
+                 f"a pilot you passed a question to. Give away the questions "
+                 f"you could have answered."),
+        "color": "#2dd4d4",
+    },
+    "featherweight": {
+        "name": "THE FEATHERWEIGHT", "short": "The Bare Airframe",
+        "tagline": "Travel light. Turn harder.",
+        "goal": (f"Finish with {FEATHERWEIGHT_MAX_SLOTS} parts or fewer and "
+                 f"score {FEATHERWEIGHT_BONUS}. A light jet turns hardest — but "
+                 f"you must pass questions you could have answered."),
+        "color": "#9aa3b8",
     },
 }
 
+AGENDA_LADDER = ["magpie", "duelist", "scavenger", "mechanic",
+                 "inspector", "quartermaster", "featherweight"]
 
-# Bounds for host-editable settings: (minimum, maximum, default-source key)
+
+def agendas_for(n: int) -> List[str]:
+    if n <= len(AGENDA_LADDER):
+        return AGENDA_LADDER[:n]
+    out = list(AGENDA_LADDER)
+    extra = ["quartermaster", "featherweight", "magpie", "scavenger"]
+    i = 0
+    while len(out) < n:
+        out.append(extra[i % len(extra)])
+        i += 1
+    return out
+
+
+# ---------------------------------------------------------------------------
+# SETTINGS
+# ---------------------------------------------------------------------------
+
 SETTING_LIMITS = {
     "round_seconds":      (15, 600),
     "rounds":             (1, 10),
@@ -176,23 +206,9 @@ def _defaults() -> Dict[str, int]:
     }
 
 
-class _DefaultsProxy(dict):
-    """Reads module constants live, so tests can patch them."""
-    def __missing__(self, key):
-        return _defaults()[key]
-
-    def get(self, key, default=None):
-        return _defaults().get(key, default)
-
-
-DEFAULTS = _DefaultsProxy()
-
-
 def resolve_settings(raw: Optional[dict]) -> Dict[str, int]:
-    """Clamp whatever the host sent into sane bounds."""
     raw = raw or {}
-    out = {}
-    base = _defaults()
+    out, base = {}, _defaults()
     for key, (lo, hi) in SETTING_LIMITS.items():
         try:
             v = int(raw[key])
@@ -202,91 +218,9 @@ def resolve_settings(raw: Optional[dict]) -> Dict[str, int]:
     return out
 
 
-# Quiz mode reskins the same five roles — the mechanics are identical, but the
-# Imposter's lie becomes a doctored answer key rather than a dumped piece.
-QUIZ_ROLES = {
-    "imposter": {
-        "name": "THE CHEAT",
-        "tagline": "Poison the answers. Smile about it.",
-        "goal": (
-            f"Drag the group's accuracy below {int(CHEAT_TARGET * 100)}% without "
-            "being identified. When you pass a question you can DOCTOR it — the "
-            "answer key is swapped, so whoever receives it is marked wrong for "
-            "answering honestly. You have 3 doctors."
-        ),
-    },
-    "mule": {
-        "name": "THE MULE",
-        "tagline": "You know who they are. They don't know you.",
-        "goal": (
-            "You win if the Cheat wins. You can miss deliberately without it "
-            "looking suspicious, and you absorb doctored questions quietly. "
-            "Nobody knows you exist."
-        ),
-    },
-    "detective": {
-        "name": "THE PROCTOR",
-        "tagline": "Someone is tampering. Prove it.",
-        "goal": (
-            "Name the Cheat at the vote. Shake hard to AUDIT the last question "
-            "passed to you — it reveals whether the answer key was tampered with "
-            "and who handed it over. You only get 2."
-        ),
-    },
-    "builder": {
-        "name": "THE STUDENT",
-        "tagline": "Answer well. Trust nobody.",
-        "goal": (
-            "Answer correctly, pass what you don't know, and work out who is "
-            "poisoning the questions. No powers, no secret knowledge — but your "
-            "vote counts as much as anyone's."
-        ),
-    },
-    "analyst": {
-        "name": "THE ANALYST",
-        "tagline": "The numbers almost tell you something.",
-        "goal": (
-            "At the vote you see everyone's accuracy — but each figure is off by "
-            "up to 3 points. Enough to argue with, not enough to prove."
-        ),
-    },
-}
-
-
-def role_info(role: str) -> dict:
-    """Role copy for the current mode."""
-    base = dict(ROLE_LIB[role])
-    if GAME.mode == "quiz" and role in QUIZ_ROLES:
-        base.update(QUIZ_ROLES[role])
-    return base
-
-
-def roles_for(n: int) -> List[str]:
-    """
-    Role distribution by player count. Roles are added in priority order as
-    the table grows, so a small table simply loses the extra roles:
-
-        1  imposter
-        2  imposter, detective
-        3  imposter, detective, builder
-        4  imposter, detective, builder, mule
-        5  + builder
-        6  + analyst
-        7+ + builders
-
-    The Mule is the first role dropped below 4, because with 3 players an
-    accomplice means the crew is outnumbered. The Analyst needs 6 before its
-    noisy pass counts mean anything.
-    """
-    ladder = ["imposter", "detective", "builder", "mule", "builder", "analyst"]
-    if n <= len(ladder):
-        return ladder[:n]
-    return ladder + ["builder"] * (n - len(ladder))
-
-
-# ----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # STATE
-# ----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 
 @dataclass
 class Player:
@@ -294,76 +228,105 @@ class Player:
     ws: Optional[WebSocket] = None
     name: str = ""
     avatar: str = "fox"
-    role: str = ""
     joined: bool = False
-    answered: bool = False          # answered the incoming call
+    answered: bool = False
     connected: bool = True
     alive: bool = True
     is_bot: bool = False
 
-    lines: int = 0
-    score: int = 0
-    passes_made: int = 0        # every pass, silent ones included
-    public_passes: int = 0      # only passes the table actually saw
-    passes_taken: int = 0
-    traces_left: int = DETECTIVE_TRACES
-    absorbs_left: int = MULE_ABSORBS
-    clean_passes: int = 3
+    agenda: str = ""
+    rival: str = ""
+    stolen: List[dict] = field(default_factory=list)
+    traded_with: str = ""
+    inspected: str = ""
+    gave_to: Dict[str, int] = field(default_factory=dict)
 
-    heading: float = 0.0            # compass heading, for flick targeting
+    correct: int = 0
+    score: int = 0
+    passes_made: int = 0
+    public_passes: int = 0
+    passes_taken: int = 0
+
+    heading: float = 0.0
     seat: int = 0
 
     active_power: Optional[dict] = None
     power_expires: float = 0.0
     loadout: Optional["partsmod.Loadout"] = None
+    crates: List[dict] = field(default_factory=list)
+    tailwind: bool = False
 
     def public(self) -> dict:
         return {
-            "pid": self.pid, "name": self.name, "lines": self.lines,
-            "score": self.score, "alive": self.alive, "seat": self.seat,
+            "pid": self.pid, "name": self.name, "avatar": self.avatar,
+            "correct": self.correct, "score": self.score,
+            "alive": self.alive, "seat": self.seat,
             "connected": self.connected, "answered": self.answered,
-            "bot": self.is_bot, "avatar": self.avatar,
-            # pass counts are deliberately NOT public — only the Detective
-            # gets them, and only through the intermission ledger
+            "bot": self.is_bot,
         }
 
 
 @dataclass
-class Game:
-    code: str = ""
-    phase: str = "lobby"   # lobby|calling|roles|round|discussion|vote|results
+class Room:
+    code: str
+    phase: str = "lobby"
     round_no: int = 0
     players: Dict[str, Player] = field(default_factory=dict)
-    phase_ends: float = 0.0
-    votes: Dict[str, str] = field(default_factory=dict)   # voter pid -> target pid
-    pass_log: List[dict] = field(default_factory=list)
     hosts: List[WebSocket] = field(default_factory=list)
-    task: Optional[asyncio.Task] = None
-    winner: str = ""
-    reveal: dict = field(default_factory=dict)
+    phase_ends: float = 0.0
+    votes: Dict[str, str] = field(default_factory=dict)
     settings: Dict[str, int] = field(default_factory=dict)
-    mode: str = GAME_MODE
     quiz: Optional["quizmod.QuizEngine"] = None
     fight: Optional["dogfightmod.Dogfight"] = None
     fight_standings: List[dict] = field(default_factory=list)
+    threat: str = ""
+    reveal: dict = field(default_factory=dict)
+    task: Optional[asyncio.Task] = None
+    touched: float = field(default_factory=time.time)
 
     def s(self, key: str) -> int:
-        """Match setting, falling back to the module default."""
-        return self.settings.get(key, DEFAULTS[key])
+        return self.settings.get(key, _defaults()[key])
 
     def roster(self) -> List[dict]:
         return [p.public() for p in self.players.values() if p.joined]
+
+    def humans(self) -> List[Player]:
+        return [p for p in self.players.values() if p.joined and not p.is_bot]
 
     def alive_players(self) -> List[Player]:
         return [p for p in self.players.values() if p.joined and p.alive]
 
 
-GAME = Game(code="".join(random.choices("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", k=4)))
+ROOMS: Dict[str, Room] = {}
+CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
-# ----------------------------------------------------------------------------
-# NETWORKING HELPERS
-# ----------------------------------------------------------------------------
+def new_code() -> str:
+    while True:
+        code = "".join(random.choices(CODE_ALPHABET, k=4))
+        if code not in ROOMS:
+            return code
+
+
+def create_room() -> Room:
+    reap_rooms()
+    r = Room(code=new_code())
+    ROOMS[r.code] = r
+    return r
+
+
+def reap_rooms():
+    now = time.time()
+    for code in [c for c, r in ROOMS.items()
+                 if now - r.touched > ROOM_IDLE_SECONDS and not r.hosts]:
+        room = ROOMS.pop(code, None)
+        if room and room.task and not room.task.done():
+            room.task.cancel()
+
+
+# ---------------------------------------------------------------------------
+# NETWORKING
+# ---------------------------------------------------------------------------
 
 async def send(ws: Optional[WebSocket], payload: dict):
     if ws is None:
@@ -374,292 +337,268 @@ async def send(ws: Optional[WebSocket], payload: dict):
         pass
 
 
-async def broadcast(payload: dict, include_hosts: bool = True):
-    targets = [p.ws for p in GAME.players.values() if p.ws]
-    if include_hosts:
-        targets += GAME.hosts
+async def broadcast(r: Room, payload: dict, hosts: bool = True):
+    targets = [p.ws for p in r.players.values() if p.ws]
+    if hosts:
+        targets += r.hosts
     await asyncio.gather(*(send(ws, payload) for ws in targets),
                          return_exceptions=True)
 
 
-async def broadcast_hosts(payload: dict):
-    await asyncio.gather(*(send(ws, payload) for ws in GAME.hosts),
+async def broadcast_hosts(r: Room, payload: dict):
+    await asyncio.gather(*(send(ws, payload) for ws in r.hosts),
                          return_exceptions=True)
 
 
-async def push_state():
-    """Everyone gets the shared view of the world."""
-    payload = {
+async def push_state(r: Room):
+    await broadcast(r, {
         "t": "state",
-        "phase": GAME.phase,
-        "round": GAME.round_no,
-        "rounds": GAME.s("rounds"),
-        "settings": GAME.settings or _defaults(),
-        "mode": GAME.mode,
-        "accuracy": round(GAME.quiz.accuracy(), 3) if GAME.quiz else None,
-        "fightStandings": GAME.fight_standings,
-        "code": GAME.code,
-        "players": GAME.roster(),
-        "endsIn": max(0, round(GAME.phase_ends - time.time())) if GAME.phase_ends else 0,
-        "winner": GAME.winner,
-        "reveal": GAME.reveal,
-    }
-    await broadcast(payload)
+        "phase": r.phase,
+        "round": r.round_no,
+        "rounds": r.s("rounds"),
+        "code": r.code,
+        "players": r.roster(),
+        "endsIn": max(0, round(r.phase_ends - time.time())) if r.phase_ends else 0,
+        "settings": r.settings or _defaults(),
+        "accuracy": round(r.quiz.accuracy(), 3) if r.quiz else None,
+        "threat": r.threat,
+        "reveal": r.reveal,
+        "fightStandings": r.fight_standings,
+    })
 
 
-# ----------------------------------------------------------------------------
-# GAME FLOW
-# ----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# LOBBY
+# ---------------------------------------------------------------------------
 
-def clear_bots():
-    for pid in [p.pid for p in GAME.players.values() if p.is_bot]:
-        GAME.players.pop(pid, None)
+def clear_bots(r: Room):
+    for pid in [p.pid for p in r.players.values() if p.is_bot]:
+        r.players.pop(pid, None)
 
 
-def add_bots(target: int):
-    """Pad the table with stand-in players so one person can test alone."""
-    existing = len([p for p in GAME.players.values() if p.joined])
-    pool = [n for n in BOT_NAMES if not any(p.name == n for p in GAME.players.values())]
-    for i in range(max(0, target - existing)):
+def add_bots(r: Room, target: int):
+    existing = len([p for p in r.players.values() if p.joined])
+    pool = [n for n in BOT_NAMES
+            if not any(p.name == n for p in r.players.values())]
+    for _ in range(max(0, target - existing)):
         if not pool:
             break
         name = pool.pop(0)
-        pid = f"bot_{name.lower()}"
-        taken = {p.avatar for p in GAME.players.values() if p.joined}
+        taken = {p.avatar for p in r.players.values() if p.joined}
         free = [a for a in AVATAR_IDS if a not in taken] or AVATAR_IDS
-        b = Player(pid=pid, name=name, joined=True, answered=True,
-                   connected=True, is_bot=True, avatar=random.choice(free))
-        GAME.players[pid] = b
+        r.players[f"bot_{name.lower()}"] = Player(
+            pid=f"bot_{name.lower()}", name=name, joined=True, answered=True,
+            connected=True, is_bot=True, avatar=random.choice(free))
 
 
-async def reset_to_lobby():
-    """Back to the join screen so new people can come in between games."""
-    if GAME.task and not GAME.task.done():
-        GAME.task.cancel()
-    GAME.task = None
-    clear_bots()
+async def reset_to_lobby(r: Room):
+    if r.task and not r.task.done():
+        r.task.cancel()
+    r.task = None
+    clear_bots(r)
+    r.phase = "lobby"
+    r.round_no = 0
+    r.phase_ends = 0
+    r.votes.clear()
+    r.threat = ""
+    r.reveal = {}
+    r.fight = None
+    r.fight_standings = []
+    r.quiz = None
 
-    GAME.phase = "lobby"
-    GAME.round_no = 0
-    GAME.phase_ends = 0
-    GAME.votes.clear()
-    GAME.pass_log.clear()
-    GAME.winner = ""
-    GAME.reveal = {}
-
-    for p in GAME.players.values():
-        p.role = ""
+    for p in r.players.values():
+        p.agenda = ""
+        p.rival = ""
         p.answered = False
         p.alive = True
-        p.lines = p.score = 0
+        p.correct = p.score = 0
         p.passes_made = p.public_passes = p.passes_taken = 0
+        p.stolen = []
+        p.traded_with = ""
+        p.inspected = ""
+        p.gave_to = {}
         p.active_power = None
-        p.power_expires = 0
+        p.loadout = None
+        p.crates = []
 
-    # drop anyone whose phone is gone, so the roster reflects the room
-    for pid in [p.pid for p in GAME.players.values()
+    for pid in [p.pid for p in r.players.values()
                 if not p.connected and not p.is_bot]:
-        GAME.players.pop(pid, None)
+        r.players.pop(pid, None)
 
-    await push_state()
-    await broadcast({"t": "to_lobby"})
+    await push_state(r)
+    await broadcast(r, {"t": "to_lobby"})
 
 
-async def start_game(fill: bool = False, settings: Optional[dict] = None):
-    GAME.settings = resolve_settings(settings)
-    mode = (settings or {}).get("mode", GAME_MODE)
-    GAME.mode = mode if mode in ("tetris", "quiz") else GAME_MODE
-    GAME.quiz = quizmod.QuizEngine() if GAME.mode == "quiz" else None
-    clear_bots()
+async def start_game(r: Room, fill: bool = False,
+                     settings: Optional[dict] = None):
+    r.settings = resolve_settings(settings)
+    clear_bots(r)
     if fill:
-        add_bots(SOLO_FILL_TO)
+        add_bots(r, SOLO_FILL_TO)
 
-    joined = [p for p in GAME.players.values() if p.joined]
+    joined = [p for p in r.players.values() if p.joined]
     if len(joined) < (1 if fill else MIN_PLAYERS):
         return
 
-    assignment = roles_for(len(joined))
-    random.shuffle(assignment)
-    for p, r in zip(joined, assignment):
-        p.role = r
-        p.answered = p.is_bot      # bots never pick up; treat them as answered
+    ag = agendas_for(len(joined))
+    random.shuffle(ag)
+    for i, (p, a) in enumerate(zip(joined, ag)):
+        p.agenda = a
+        p.rival = ""
+        p.answered = p.is_bot
         p.alive = True
-        p.lines = p.score = p.passes_made = p.passes_taken = 0
-        p.public_passes = 0
-        p.traces_left = DETECTIVE_TRACES
-        p.absorbs_left = MULE_ABSORBS
-        p.clean_passes = 3
-
-    for i, p in enumerate(joined):
+        p.correct = p.score = 0
+        p.passes_made = p.public_passes = p.passes_taken = 0
+        p.stolen = []
+        p.traded_with = ""
+        p.inspected = ""
+        p.gave_to = {}
+        p.loadout = partsmod.Loadout()
+        p.crates = []
         p.seat = i
 
-    GAME.phase = "calling"
-    GAME.round_no = 0
-    GAME.votes.clear()
-    GAME.pass_log.clear()
-    GAME.winner = ""
-    GAME.reveal = {}
-    await push_state()
+    duel = next((p for p in joined if p.agenda == "duelist"), None)
+    if duel:
+        others = [q for q in joined if q.pid != duel.pid]
+        if others:
+            duel.rival = random.choice(others).pid
 
-    # Ring every phone. The role is only delivered once they answer.
+    r.quiz = quizmod.QuizEngine()
+    r.phase = "calling"
+    r.round_no = 0
+    r.votes.clear()
+    r.threat = ""
+    r.reveal = {}
+    r.fight_standings = []
+    r.touched = time.time()
+    await push_state(r)
+
     for p in joined:
-        await send(p.ws, {"t": "call", "caller": "UNKNOWN NUMBER"})
+        await send(p.ws, {"t": "call", "caller": "FLIGHT CONTROL"})
 
-    GAME.task = asyncio.create_task(run_match())
+    r.task = asyncio.create_task(run_match(r))
 
 
-async def deliver_role(p: Player):
-    role = role_info(p.role)
+async def deliver_agenda(r: Room, p: Player):
+    if not p.agenda:
+        return
+    a = AGENDAS[p.agenda]
     payload = {
-        "t": "role",
-        "role": p.role,
-        "mode": GAME.mode,
-        "name": role["name"],
-        "tagline": role["tagline"],
-        "goal": role["goal"],
-        "color": role["color"],
-        "team": role["team"],
+        "t": "role", "agenda": p.agenda, "role": p.agenda,
+        "name": a["name"], "short": a["short"], "tagline": a["tagline"],
+        "goal": a["goal"], "color": a["color"],
     }
-    if p.role == "mule":
-        imp = next((q for q in GAME.players.values() if q.role == "imposter"), None)
-        if imp:
-            payload["knows"] = {"name": imp.name, "label": "YOUR IMPOSTER"}
+    if p.agenda == "duelist" and p.rival:
+        tgt = r.players.get(p.rival)
+        if tgt:
+            payload["knows"] = {"name": tgt.name, "label": "YOUR RIVAL"}
     await send(p.ws, payload)
 
 
-async def run_match():
+# ---------------------------------------------------------------------------
+# MATCH
+# ---------------------------------------------------------------------------
+
+async def run_match(r: Room):
     try:
-        # Wait for everyone to pick up (or 25s, whichever comes first)
         deadline = time.time() + 25
         while time.time() < deadline:
-            if all(p.answered for p in GAME.players.values() if p.joined):
+            if all(p.answered for p in r.players.values() if p.joined):
                 break
             await asyncio.sleep(0.3)
 
-        GAME.phase = "roles"
-        GAME.phase_ends = time.time() + 8
-        await push_state()
+        r.phase = "roles"
+        r.phase_ends = time.time() + 8
+        await push_state(r)
         await asyncio.sleep(8)
 
-        for r in range(1, GAME.s("rounds") + 1):
-            GAME.round_no = r
-            GAME.phase = "round"
-            GAME.phase_ends = time.time() + GAME.s("round_seconds")
-            for p in GAME.players.values():
-                p.absorbs_left = MULE_ABSORBS
+        for rd in range(1, r.s("rounds") + 1):
+            r.round_no = rd
+            r.phase = "round"
+            r.phase_ends = time.time() + r.s("round_seconds")
+            for p in r.players.values():
                 p.alive = True
-            await push_state()
-            await broadcast({"t": "round_start", "round": r, "mode": GAME.mode})
+            await push_state(r)
+            await broadcast(r, {"t": "round_start", "round": rd})
 
-            if GAME.mode == "quiz":
-                for p in GAME.alive_players():
-                    if not p.is_bot:
-                        inst = GAME.quiz.issue(p.pid)
-                        await send(p.ws, {"t": "question", **inst.public()})
+            for p in r.alive_players():
+                if not p.is_bot:
+                    inst = r.quiz.issue(p.pid)
+                    await send(p.ws, {"t": "question", **inst.public()})
 
-            t_end = GAME.phase_ends
+            t_end = r.phase_ends
             t_start = time.time()
-            # Evenly spaced draws: for 60s and 3 cards that's 10s, 30s, 50s —
-            # so no card lands right as the round ends.
-            n_cards = GAME.s("powers_per_round")
-            gap = (GAME.s("round_seconds") / n_cards) if n_cards else 0
+            n_cards = r.s("powers_per_round")
+            gap = (r.s("round_seconds") / n_cards) if n_cards else 0
             schedule = [t_start + gap * (i + 0.5) for i in range(n_cards)]
             drawn = 0
             next_bot = time.time() + random.uniform(4, 7)
 
-            # tell clients how long the first card has to run
             if schedule:
-                await broadcast({"t": "power_timer",
-                                 "next": round(schedule[0] - t_start, 1),
-                                 "gap": round(gap, 1)})
+                await broadcast(r, {"t": "power_timer",
+                                    "next": round(schedule[0] - t_start, 1),
+                                    "gap": round(gap, 1)})
 
             while time.time() < t_end:
                 now = time.time()
                 if drawn < len(schedule) and now >= schedule[drawn]:
-                    await deal_powers()
+                    await deal_cards(r)
                     drawn += 1
                     nxt = (schedule[drawn] - now) if drawn < len(schedule) else (t_end - now)
-                    await broadcast({"t": "power_timer",
-                                     "next": round(max(0, nxt), 1),
-                                     "gap": round(gap, 1),
-                                     "remaining": len(schedule) - drawn})
-                if GAME.mode == "quiz":
-                    for pid, inst in GAME.quiz.expired(now):
-                        p = GAME.players.get(pid)
-                        if p:
-                            await resolve_answer(p, -1)
+                    await broadcast(r, {"t": "power_timer",
+                                        "next": round(max(0, nxt), 1),
+                                        "gap": round(gap, 1),
+                                        "remaining": len(schedule) - drawn})
+                for pid, _ in r.quiz.expired(now):
+                    p = r.players.get(pid)
+                    if p:
+                        await resolve_answer(r, p, -1)
                 if now >= next_bot:
-                    await bot_turn()
+                    await bot_turn(r)
                     next_bot = now + random.uniform(4, 8)
                 await asyncio.sleep(0.25)
 
-            await broadcast({"t": "round_end", "round": r})
+            await broadcast(r, {"t": "round_end", "round": rd})
 
-            # Between-round break: show what the table saw each player pass.
-            GAME.phase = "intermission"
-            GAME.phase_ends = time.time() + INTERMISSION_SECONDS
+            r.phase = "intermission"
+            r.phase_ends = time.time() + INTERMISSION_SECONDS
             standings = sorted(
                 ({"name": p.name, "avatar": p.avatar, "bot": p.is_bot,
-                  "passes": p.public_passes, "taken": p.passes_taken,
-                  "lines": p.lines}
-                 for p in GAME.players.values() if p.joined),
-                key=lambda x: -x["passes"])
-            await push_state()
-
-            # Only the Detective sees the pass ledger. Everyone else gets the
-            # break with line counts instead — otherwise the tally hands the
-            # Imposter over and there is nothing left to deduce.
-            blind = sorted(
-                ({"name": p.name, "avatar": p.avatar, "bot": p.is_bot,
-                  "lines": p.lines}
-                 for p in GAME.players.values() if p.joined),
-                key=lambda x: -x["lines"])
-            for p in GAME.players.values():
-                if not p.joined or p.is_bot:
-                    continue
-                is_det = p.role == "detective"
-                await send(p.ws, {
-                    "t": "intermission", "round": r,
-                    "last": r >= GAME.s("rounds"),
-                    "ledger": is_det,
-                    "standings": standings if is_det else blind,
-                })
-            await broadcast_hosts({"t": "intermission", "round": r,
-                                   "ledger": False, "standings": blind})
+                  "correct": p.correct,
+                  "rating": (p.loadout or partsmod.Loadout()).rating()}
+                 for p in r.players.values() if p.joined),
+                key=lambda x: -x["rating"])
+            await push_state(r)
+            await broadcast(r, {"t": "intermission", "round": rd,
+                                "last": rd >= r.s("rounds"),
+                                "standings": standings})
             await asyncio.sleep(INTERMISSION_SECONDS)
 
-        # Discussion
-        GAME.phase = "discussion"
-        GAME.phase_ends = time.time() + GAME.s("discussion_seconds")
-        await push_state()
-        await send_analyst_data()
-        await asyncio.sleep(GAME.s("discussion_seconds"))
+        r.phase = "discussion"
+        r.phase_ends = time.time() + r.s("discussion_seconds")
+        await push_state(r)
+        await asyncio.sleep(r.s("discussion_seconds"))
 
-        # Vote
-        GAME.phase = "vote"
-        GAME.phase_ends = time.time() + GAME.s("vote_seconds")
-        GAME.votes.clear()
-        await push_state()
-        await broadcast({"t": "vote_start",
-                         "players": [p.public() for p in GAME.alive_players()]})
-        await bot_votes()
+        r.phase = "vote"
+        r.phase_ends = time.time() + r.s("vote_seconds")
+        r.votes.clear()
+        await push_state(r)
+        await broadcast(r, {"t": "vote_start", "kind": "threat",
+                            "players": [p.public() for p in r.alive_players()]})
+        await bot_votes(r)
 
-        v_end = GAME.phase_ends
+        v_end = r.phase_ends
         while time.time() < v_end:
-            if len(GAME.votes) >= len(GAME.alive_players()):
+            if len(r.votes) >= len(r.alive_players()):
                 break
             await asyncio.sleep(0.3)
 
-        await resolve_vote()
+        await resolve_threat_vote(r)
+        await run_dogfight(r)
 
-        # The dogfight is the finale, so it runs after the accusation but
-        # before the reveal: you fly knowing who the table blamed, not who
-        # the Cheat actually was.
-        if GAME.mode == "quiz":
-            await run_dogfight()
-            GAME.phase = "results"
-            GAME.phase_ends = 0
-            await push_state()
+        r.phase = "results"
+        r.phase_ends = 0
+        await push_state(r)
 
     except asyncio.CancelledError:
         pass
@@ -669,98 +608,343 @@ async def run_match():
         traceback.print_exc()
 
 
-async def bot_turn():
-    """A stand-in player dumps a piece on somebody, so solo testing has traffic."""
-    bots = [p for p in GAME.players.values() if p.is_bot and p.alive]
-    if not bots:
-        return
-    sender = random.choice(bots)
-    targets = [p for p in GAME.alive_players() if p.pid != sender.pid]
-    if not targets:
-        return
-    # favour real phones so the tester actually receives pieces
-    humans = [p for p in targets if not p.is_bot]
-    target = random.choice(humans) if humans and random.random() < 0.75 \
-        else random.choice(targets)
-    await handle_pass(sender, {
-        "targetPid": target.pid,
-        "piece": random.choice(["I", "J", "L", "O", "S", "T", "Z"]),
-        "heat": random.choice([0, 0, 1, 2]),
-    })
-    # bots also clear the odd line so the scoreboard moves
-    sender.lines += random.choice([0, 0, 1])
-    sender.score += random.choice([0, 100, 300])
-
-
-async def bot_votes():
-    for b in GAME.players.values():
-        if not b.is_bot or not b.alive:
-            continue
-        others = [p for p in GAME.alive_players() if p.pid != b.pid]
-        if others:
-            GAME.votes[b.pid] = random.choice(others).pid
-
-
-async def deal_powers():
-    """One card per player, POWERS_PER_ROUND times per round."""
-    for p in GAME.players.values():
+async def deal_cards(r: Room):
+    for p in r.players.values():
         if not p.joined or not p.answered or p.is_bot:
-            continue   # bots skip cards so they reliably keep passing
-        card = dict(random.choice(POWERS))
-        if GAME.mode == "quiz":
-            card.update(QUIZ_POWER_COPY.get(card["id"], {}))
+            continue
+        card = dict(random.choice(CARDS))
         p.active_power = card
         p.power_expires = time.time() + card["dur"] if card["dur"] else 0
         await send(p.ws, {"t": "power", "card": card})
 
-        # 50/50 has to be resolved server-side: the client does not know the
-        # answer, so it cannot work out which two options to burn.
-        if GAME.mode == "quiz" and card["id"] == "forge" and GAME.quiz:
-            inst = GAME.quiz.live.get(p.pid)
+        if p.loadout is None:
+            p.loadout = partsmod.Loadout()
+
+        if card["id"] == "fifty" and r.quiz:
+            inst = r.quiz.live.get(p.pid)
             if inst:
                 wrong = [i for i in range(4) if i != inst.answer]
                 random.shuffle(wrong)
                 await send(p.ws, {"t": "burn", "indices": sorted(wrong[:2])})
-    await broadcast_hosts({"t": "power_round"})
+
+        elif card["id"] == "mystery":
+            p.crates.append(partsmod.roll_mystery())
+            await send(p.ws, {"t": "crates", "n": len(p.crates)})
+
+        elif card["id"] == "rust":
+            lost = p.loadout.corrode()
+            if lost:
+                await send(p.ws, {"t": "rusted", **lost,
+                                  "loadout": p.loadout.public()})
+            else:
+                await send(p.ws, {"t": "toast", "kind": "good",
+                                  "text": "RUST — NOTHING TO CORRODE YET"})
+    await broadcast_hosts(r, {"t": "power_round"})
 
 
-async def send_analyst_data():
-    counts = {p.pid: p.passes_made for p in GAME.players.values() if p.joined}
-    for p in GAME.players.values():
-        if p.role == "analyst":
-            noisy = [
-                {"name": GAME.players[pid].name,
-                 "count": max(0, c + random.randint(-3, 3))}
-                for pid, c in counts.items()
-            ]
-            noisy.sort(key=lambda x: -x["count"])
-            await send(p.ws, {"t": "analyst", "rows": noisy})
+async def bot_turn(r: Room):
+    """A stand-in pilot dumps a question on somebody, so solo testing has traffic."""
+    bots = [p for p in r.players.values() if p.is_bot and p.alive]
+    if not bots or not r.quiz:
+        return
+    sender = random.choice(bots)
+    targets = [p for p in r.alive_players() if p.pid != sender.pid]
+    if not targets:
+        return
+    humans = [p for p in targets if not p.is_bot]
+    target = random.choice(humans) if humans and random.random() < 0.75 \
+        else random.choice(targets)
+
+    inst = r.quiz.live.get(sender.pid) or r.quiz.issue(sender.pid)
+    r.quiz.take(sender.pid)
+    sender.passes_made += 1
+    sender.public_passes += 1
+    target.passes_taken += 1
+
+    landed = r.quiz.hand_to(inst, target.pid, sender.pid, sender.name)
+    if landed is not None:
+        await send(target.ws, {"t": "question", **landed.public(), "passed": True})
+    await broadcast_hosts(r, {"t": "pass_fx", "from": sender.name,
+                              "to": target.name, "heat": inst.heat})
 
 
-async def run_dogfight():
-    """Everyone flies the jet they built. Server-authoritative, 30 Hz."""
-    secs = GAME.s("fight_seconds")
-    fight = dogfightmod.Dogfight(seconds=secs)
-    GAME.fight = fight
+async def bot_votes(r: Room):
+    for b in r.players.values():
+        if not b.is_bot or not b.alive:
+            continue
+        others = [p for p in r.alive_players() if p.pid != b.pid]
+        if others:
+            r.votes[b.pid] = random.choice(others).pid
 
-    for p in GAME.players.values():
+
+# ---------------------------------------------------------------------------
+# QUIZ
+# ---------------------------------------------------------------------------
+
+async def resolve_answer(r: Room, p: Player, choice: int,
+                         inst_id: Optional[int] = None):
+    if r.quiz is None:
+        return
+    res = r.quiz.resolve(p.pid, choice, time.time(), inst_id)
+    if res is None:
+        return
+
+    p.score += res["points"]
+    if res["correct"]:
+        p.correct += 1
+
+    if p.loadout is None:
+        p.loadout = partsmod.Loadout()
+    heat = res.get("multiplier", 1) - 1
+
+    if p.active_power and p.active_power.get("id") == "tailwind":
+        p.tailwind = True
+    if res["correct"] and p.tailwind:
+        heat = max(heat, 4)
+        p.tailwind = False
+        if p.active_power and p.active_power.get("id") == "tailwind":
+            p.active_power = None
+
+    award = p.loadout.award(partsmod.roll_part(heat)) if res["correct"] else None
+
+    await send(p.ws, {"t": "answer_result", **res})
+    if award:
+        await send(p.ws, {"t": "part", **award, "loadout": p.loadout.public()})
+        if award.get("fitted"):
+            last = r.quiz.last_received.get(p.pid)
+            if last and last.from_pid and last.from_pid != p.pid:
+                giver = r.players.get(last.from_pid)
+                if giver:
+                    giver.gave_to[p.pid] = giver.gave_to.get(p.pid, 0) + 1
+
+    await broadcast_hosts(r, {
+        "t": "quiz_fx", "name": p.name, "avatar": p.avatar,
+        "correct": res["correct"], "timedOut": res["timedOut"],
+        "points": res["points"], "multiplier": res["multiplier"],
+        "accuracy": round(r.quiz.accuracy(), 3),
+    })
+
+    if r.phase == "round" and p.alive:
+        was_queued = bool(r.quiz.queued.get(p.pid))
+        inst = r.quiz.issue(p.pid)
+        await send(p.ws, {"t": "question", **inst.public(), "passed": was_queued})
+
+
+def target_by_heading(r: Room, sender: Player, heading: float) -> Optional[Player]:
+    others = [p for p in r.alive_players() if p.pid != sender.pid]
+    if not others:
+        return None
+    n = len(others) + 1
+    best, best_d = None, 999.0
+    for p in others:
+        seat_angle = (360.0 / n) * ((p.seat - sender.seat) % n)
+        d = abs((heading - seat_angle + 180) % 360 - 180)
+        if d < best_d:
+            best, best_d = p, d
+    return best
+
+
+async def handle_pass(r: Room, sender: Player, msg: dict):
+    if r.quiz is None:
+        return
+    if sender.active_power and sender.active_power["id"] == "locked":
+        await send(sender.ws, {"t": "toast", "kind": "bad",
+                               "text": "LOCKED BAY — CAN'T PASS"})
+        return
+
+    target = r.players.get(msg.get("targetPid", "")) or \
+        target_by_heading(r, sender, float(msg.get("heading", 0)))
+    if target is None or not target.alive or target.pid == sender.pid:
+        return
+
+    inst = r.quiz.take(sender.pid)
+    if inst is None:
+        return
+
+    silent = False
+    if sender.active_power and sender.active_power["id"] == "deflector":
+        silent = True
+        sender.active_power = None
+
+    sender.passes_made += 1
+    target.passes_taken += 1
+    if not silent:
+        sender.public_passes += 1
+
+    landed = r.quiz.hand_to(inst, target.pid, sender.pid, sender.name,
+                            silent=silent)
+    if landed is not None:
+        await send(target.ws, {"t": "question", **landed.public(), "passed": True})
+    else:
+        await send(target.ws, {"t": "toast", "kind": "bad",
+                               "text": "A QUESTION IS QUEUED FOR YOU"})
+
+    nxt = r.quiz.issue(sender.pid)
+    await send(sender.ws, {"t": "question", **nxt.public()})
+
+    if not silent:
+        await broadcast_hosts(r, {"t": "pass_fx", "from": sender.name,
+                                  "to": target.name, "heat": inst.heat})
+
+
+async def handle_trade(r: Room, p: Player, msg: dict):
+    if p.agenda != "mechanic" or r.phase != "discussion":
+        return
+    if p.traded_with:
+        await send(p.ws, {"t": "toast", "kind": "bad", "text": "ALREADY TRADED"})
+        return
+
+    other = r.players.get(msg.get("targetPid", ""))
+    mine_slot, their_slot = msg.get("mySlot"), msg.get("theirSlot")
+    if not other or other.pid == p.pid:
+        return
+    if mine_slot not in partsmod.SLOTS or their_slot not in partsmod.SLOTS:
+        return
+
+    p.loadout = p.loadout or partsmod.Loadout()
+    other.loadout = other.loadout or partsmod.Loadout()
+
+    mine = p.loadout.parts.get(mine_slot)
+    theirs = other.loadout.parts.get(their_slot)
+    if mine is None and theirs is None:
+        await send(p.ws, {"t": "toast", "kind": "bad", "text": "NOTHING TO SWAP"})
+        return
+
+    p.loadout.parts[mine_slot] = None
+    other.loadout.parts[their_slot] = None
+    if theirs:
+        theirs = dict(theirs, slot=mine_slot)
+        p.loadout.parts[mine_slot] = theirs
+    if mine:
+        mine = dict(mine, slot=their_slot)
+        other.loadout.parts[their_slot] = mine
+
+    p.traded_with = other.pid
+    await send(p.ws, {"t": "traded", "with": other.name,
+                      "got": partsmod.public_part(theirs, mine_slot) if theirs else None,
+                      "gave": partsmod.public_part(mine, their_slot) if mine else None,
+                      "loadout": p.loadout.public()})
+    await send(other.ws, {"t": "traded", "with": p.name, "forced": True,
+                          "got": partsmod.public_part(mine, their_slot) if mine else None,
+                          "gave": partsmod.public_part(theirs, mine_slot) if theirs else None,
+                          "loadout": other.loadout.public()})
+    await broadcast_hosts(r, {"t": "trade_fx", "from": p.name, "to": other.name})
+
+
+async def handle_inspect(r: Room, p: Player, msg: dict):
+    if p.agenda != "inspector" or p.inspected:
+        return
+    other = r.players.get(msg.get("targetPid", ""))
+    if not other or other.pid == p.pid:
+        return
+    p.inspected = other.pid
+    lo = other.loadout or partsmod.Loadout()
+    await send(p.ws, {"t": "inspection", "name": other.name,
+                      "avatar": other.avatar, "loadout": lo.public()})
+
+
+# ---------------------------------------------------------------------------
+# THREAT VOTE + DOGFIGHT
+# ---------------------------------------------------------------------------
+
+async def resolve_threat_vote(r: Room):
+    tally: Dict[str, int] = {}
+    for target in r.votes.values():
+        tally[target] = tally.get(target, 0) + 1
+
+    marked = None
+    if tally:
+        top = max(tally.values())
+        leaders = [pid for pid, c in tally.items() if c == top]
+        marked = leaders[0] if len(leaders) == 1 else random.choice(leaders)
+
+    threat = r.players.get(marked) if marked else None
+    r.threat = threat.pid if threat else ""
+    r.reveal = {
+        "threat": threat.name if threat else None,
+        "tally": [{"name": r.players[pid].name, "votes": c}
+                  for pid, c in sorted(tally.items(), key=lambda x: -x[1])
+                  if pid in r.players],
+    }
+    if threat:
+        await send(threat.ws, {
+            "t": "marked", "bounty": THREAT_BOUNTY,
+            "text": f"The table marked you. Kills on you pay {THREAT_BOUNTY}x — "
+                    f"but you fly with an afterburner.",
+        })
+    await broadcast(r, {
+        "t": "threat",
+        "name": threat.name if threat else None,
+        "avatar": threat.avatar if threat else None,
+        "bounty": THREAT_BOUNTY, "tally": r.reveal["tally"],
+    })
+    await asyncio.sleep(3)
+
+
+async def run_dogfight(r: Room):
+    secs = r.s("fight_seconds")
+    fight = dogfightmod.Dogfight(seconds=secs, threat=r.threat,
+                                 bounty=THREAT_BOUNTY)
+    r.fight = fight
+
+    for p in r.players.values():
         if not p.joined:
             continue
         lo = p.loadout or partsmod.Loadout()
-        fight.add(p.pid, p.name, p.avatar, lo.flight_stats(), lo.faulty_slots())
+        st = lo.flight_stats()
+        if p.pid == r.threat:
+            st["maxSpeed"] *= 1.18
+            st["accel"] *= 1.25
+            st["hp"] *= 1.1
+        fight.add(p.pid, p.name, p.avatar, st, [])
 
-    GAME.phase = "fight"
-    GAME.phase_ends = time.time() + secs + 6
-    await push_state()
+    def on_kill(shooter_jet, victim_jet, f):
+        killer = r.players.get(shooter_jet.pid)
+        victim = r.players.get(victim_jet.pid)
+        if not killer or not victim or killer.agenda != "scavenger":
+            return
+        if not victim.loadout:
+            return
+        taken = victim.loadout.strip_best()
+        if not taken:
+            return
+        killer.loadout = killer.loadout or partsmod.Loadout()
+        killer.loadout.award(taken)
+        killer.stolen.append(partsmod.public_part(taken, taken["slot"]))
+        shooter_jet.stats = killer.loadout.flight_stats()
+        victim_jet.stats = victim.loadout.flight_stats()
+        f.events.append({"kind": "steal", "pid": killer.pid,
+                         "name": killer.name, "from": victim.name,
+                         "part": taken["name"], "tier": taken["tier"]})
 
-    # a beat on the launch pad so people can get their hands right
-    await broadcast({
-        "t": "fight_start",
-        "seconds": secs,
+    fight.on_kill = on_kill
+
+    r.phase = "fight"
+    r.phase_ends = time.time() + secs + 6
+    await push_state(r)
+
+    for p in r.players.values():
+        if not p.joined or not p.crates:
+            continue
+        p.loadout = p.loadout or partsmod.Loadout()
+        opened = [p.loadout.award(c) for c in p.crates]
+        p.crates = []
+        await send(p.ws, {"t": "crate_open", "opened": opened,
+                          "loadout": p.loadout.public()})
+        # the crate may have changed the jet they're about to fly
+        if p.pid in fight.jets:
+            fight.jets[p.pid].stats = p.loadout.flight_stats()
+            fight.jets[p.pid].max_hp = fight.jets[p.pid].hp = \
+                p.loadout.flight_stats()["hp"]
+    await asyncio.sleep(2.2)
+
+    await broadcast(r, {
+        "t": "fight_start", "seconds": secs,
         "arena": [dogfightmod.ARENA_W, dogfightmod.ARENA_H],
+        "threat": r.threat,
         "jets": [{"pid": p.pid, "name": p.name, "avatar": p.avatar,
                   "loadout": (p.loadout or partsmod.Loadout()).public()}
-                 for p in GAME.players.values() if p.joined],
+                 for p in r.players.values() if p.joined],
     })
     await asyncio.sleep(4)
 
@@ -771,17 +955,14 @@ async def run_dogfight():
     while fight.running:
         now = time.time()
         snap = fight.step(now)
-
-        # bots fly themselves so solo testing still has a fight
-        for b in GAME.players.values():
+        for b in r.players.values():
             if b.is_bot:
                 bot_fly(fight, b.pid, now)
-
-        await broadcast_hosts(snap)
+        await broadcast_hosts(r, snap)
 
         frame += 1
         if frame % PHONE_EVERY == 0:
-            for p in GAME.players.values():
+            for p in r.players.values():
                 if p.is_bot or not p.ws:
                     continue
                 me = next((j for j in snap["jets"] if j["pid"] == p.pid), None)
@@ -793,14 +974,13 @@ async def run_dogfight():
                                                  or e.get("victimPid") == p.pid]})
         await asyncio.sleep(dt)
 
-    standings = fight.standings()
-    GAME.fight_standings = standings
-    await broadcast({"t": "fight_over", "standings": standings})
+    standings = score_agendas(r, fight, fight.standings())
+    r.fight_standings = standings
+    await broadcast(r, {"t": "fight_over", "standings": standings})
     await asyncio.sleep(5)
 
 
 def bot_fly(fight, pid: str, now: float):
-    """Simple pursuit AI so bots are not sitting ducks."""
     j = fight.jets.get(pid)
     if not j or not j.alive:
         return
@@ -822,293 +1002,92 @@ def bot_fly(fight, pid: str, now: float):
         fight.fire_missile(pid, now)
 
 
-async def resolve_vote():
-    tally: Dict[str, int] = {}
-    for target in GAME.votes.values():
-        tally[target] = tally.get(target, 0) + 1
+def score_agendas(r: Room, fight, standings: List[dict]) -> List[dict]:
+    joined = [p for p in r.players.values() if p.joined]
+    best_rank = max((p.loadout.best_tier_rank() if p.loadout else -1)
+                    for p in joined) if joined else -1
+    by_pid = {row["pid"]: row for row in standings}
 
-    accused = None
-    if tally:
-        top = max(tally.values())
-        leaders = [pid for pid, c in tally.items() if c == top]
-        accused = leaders[0] if len(leaders) == 1 else None  # tie = nobody out
+    for p in joined:
+        row = by_pid.get(p.pid)
+        if row is None:
+            continue
+        lo = p.loadout or partsmod.Loadout()
+        bonus, note = 0, ""
 
-    imposter = next((p for p in GAME.players.values() if p.role == "imposter"), None)
+        if p.agenda == "magpie":
+            if lo.best_tier_rank() >= 0 and lo.best_tier_rank() == best_rank:
+                bonus, note = MAGPIE_BONUS, "held the rarest part at the table"
+            else:
+                note = "was out-collected"
 
-    if GAME.mode == "quiz":
-        acc = GAME.quiz.accuracy() if GAME.quiz else 1.0
-        caught = bool(accused and imposter and accused == imposter.pid)
-        if caught:
-            winner = "crew"
-            reason = (f"The Cheat was caught. The group finished on "
-                      f"{acc * 100:.0f}% accuracy.")
-        elif acc < CHEAT_TARGET:
-            winner = "imposter"
-            reason = (f"Accuracy collapsed to {acc * 100:.0f}% and the Cheat "
-                      f"walked away clean.")
-        else:
-            winner = "imposter"
-            reason = (f"The Cheat was never identified, though the group held "
-                      f"{acc * 100:.0f}% accuracy.")
-    else:
-        quota_met = bool(imposter and imposter.passes_made >= IMPOSTER_QUOTA)
-        if accused and imposter and accused == imposter.pid:
-            winner = "crew"
-            reason = "The Imposter was caught."
-        elif quota_met:
-            winner = "imposter"
-            reason = f"The Imposter dumped {imposter.passes_made} pieces and walked."
-        else:
-            winner = "imposter"
-            reason = "The Imposter was never identified."
+        elif p.agenda == "duelist":
+            rival = r.players.get(p.rival)
+            n = sum(1 for e in fight.kill_log
+                    if e["killer"] == p.pid and rival and e["victim"] == rival.pid)
+            bonus = n * DUELIST_PER_KILL
+            note = (f"downed {rival.name} {n}x" if rival and n
+                    else f"never caught {rival.name}" if rival else "had no rival")
 
-    GAME.winner = winner
-    GAME.reveal = {
-        "accused": GAME.players[accused].name if accused else None,
-        "reason": reason,
-        "tally": [{"name": GAME.players[pid].name, "votes": c}
-                  for pid, c in sorted(tally.items(), key=lambda x: -x[1])],
-        "roles": [
-            # No pass counts here: the reveal is about who people were, not a
-            # post-hoc audit trail.
-            {"name": p.name, "avatar": p.avatar, "role": role_info(p.role)["name"],
-             "color": role_info(p.role)["color"],
-             "team": role_info(p.role)["team"],
-             "lines": p.lines}
-            for p in GAME.players.values() if p.joined
-        ],
-    }
-    # In quiz mode the dogfight comes between the accusation and the reveal,
-    # so hold the results back until the flying is done.
-    if GAME.mode == "quiz":
-        return
-    GAME.phase = "results"
-    GAME.phase_ends = 0
-    await push_state()
+        elif p.agenda == "scavenger":
+            bonus = len(p.stolen) * SCAVENGER_PER_PART
+            note = (f"stripped {len(p.stolen)} part(s) off wrecks"
+                    if p.stolen else "never scavenged a thing")
 
+        elif p.agenda == "mechanic":
+            other = r.players.get(p.traded_with)
+            if other:
+                mine = lo.rating()
+                theirs = (other.loadout or partsmod.Loadout()).rating()
+                if mine > theirs:
+                    bonus, note = MECHANIC_BONUS, f"out-traded {other.name}"
+                else:
+                    note = f"traded with {other.name} and lost out"
+            else:
+                note = "never forced a trade"
 
-# ----------------------------------------------------------------------------
-# PASS ROUTING — the heart of the deduction layer
-# ----------------------------------------------------------------------------
+        elif p.agenda == "inspector":
+            target = r.players.get(p.inspected)
+            if target and target.pid == r.threat:
+                bonus = INSPECTOR_BONUS
+                note = f"inspected {target.name} — the table agreed"
+            elif target:
+                note = f"inspected {target.name}, who nobody feared"
+            else:
+                note = "never opened a panel"
 
-def target_by_heading(sender: Player, heading: float) -> Optional[Player]:
-    """Pick whoever the sender's phone is pointing at."""
-    others = [p for p in GAME.alive_players() if p.pid != sender.pid]
-    if not others:
-        return None
-    n = len(others) + 1
-    best, best_d = None, 999.0
-    for i, p in enumerate(others):
-        seat_angle = (360.0 / n) * ((p.seat - sender.seat) % n)
-        d = abs((heading - seat_angle + 180) % 360 - 180)
-        if d < best_d:
-            best, best_d = p, d
-    return best
+        elif p.agenda == "quartermaster":
+            n = sum(p.gave_to.values())
+            bonus = n * QUARTERMASTER_PER_PART
+            note = f"fed {n} part(s) to other pilots"
+
+        elif p.agenda == "featherweight":
+            if lo.filled() <= FEATHERWEIGHT_MAX_SLOTS:
+                bonus = FEATHERWEIGHT_BONUS
+                note = f"flew light — {lo.filled()} bays"
+            else:
+                note = f"got greedy — {lo.filled()} bays"
+
+        a = AGENDAS.get(p.agenda, {})
+        row["agenda"] = p.agenda
+        row["agendaName"] = a.get("name", "")
+        row["agendaColor"] = a.get("color", "")
+        row["agendaNote"] = note
+        row["bonus"] = bonus
+        row["final"] = row["score"] + bonus
+        row["rating"] = lo.rating()
+        row["stolen"] = p.stolen
+        row["loadout"] = lo.public()
+
+    standings.sort(key=lambda x: -x.get("final", x["score"]))
+    return standings
 
 
-async def handle_pass(sender: Player, msg: dict):
-    if sender.active_power and sender.active_power["id"] == "stuck":
-        await send(sender.ws, {"t": "toast", "text": "STUCK WITH IT — can't pass",
-                               "kind": "bad"})
-        return
-
-    target = None
-    if msg.get("targetPid"):
-        target = GAME.players.get(msg["targetPid"])
-    if target is None:
-        target = target_by_heading(sender, float(msg.get("heading", 0)))
-    if target is None or not target.alive:
-        return
-
-    heat = int(msg.get("heat", 0)) + 1
-    piece = msg.get("piece", "T")
-    silent = False
-
-    # Free Pass / Clean Pass hide the arrival animation
-    if sender.active_power and sender.active_power["id"] == "freepass":
-        silent = True
-        sender.active_power = None
-    elif sender.role == "imposter" and msg.get("clean") and sender.clean_passes > 0:
-        silent = True
-        sender.clean_passes -= 1
-        await send(sender.ws, {"t": "clean_left", "n": sender.clean_passes})
-
-    # Mirror Shield bounces it straight back
-    if (target.active_power and target.active_power["id"] == "mirror"
-            and time.time() < target.power_expires):
-        await send(target.ws, {"t": "toast", "text": "MIRROR SHIELD — bounced",
-                               "kind": "good"})
-        target, sender_was = sender, target
-        heat += 1
-        silent = False
-        await send(target.ws, {"t": "incoming", "piece": piece, "heat": heat,
-                               "from": sender_was.name, "silent": False,
-                               "bounced": True})
-        return
-
-    # Mule absorbs silently
-    if target.role == "mule" and target.absorbs_left > 0 and silent:
-        target.absorbs_left -= 1
-        sender.passes_made += 1
-        await send(target.ws, {"t": "absorbed", "left": target.absorbs_left})
-        return
-
-    sender.passes_made += 1
-    target.passes_taken += 1
-    if not silent:
-        # Silent passes deliberately never reach the public tally — that is
-        # what Clean Pass and Free Pass are buying.
-        sender.public_passes += 1
-    GAME.pass_log.append({
-        "from": sender.pid, "to": target.pid, "piece": piece,
-        "heat": heat, "silent": silent, "t": time.time(),
-    })
-
-    await send(target.ws, {
-        "t": "incoming", "piece": piece, "heat": heat,
-        "from": None if silent else sender.name,
-        "fromPid": None if silent else sender.pid,
-        "fromAvatar": None if silent else sender.avatar,
-        "silent": silent,
-    })
-    if not silent:
-        await broadcast_hosts({"t": "pass_fx", "from": sender.name,
-                               "to": target.name, "heat": heat})
-
-
-async def resolve_answer(p: Player, choice: int, inst_id: Optional[int] = None):
-    """Score one answer and hand the player their next question."""
-    if GAME.quiz is None:
-        return
-    res = GAME.quiz.resolve(p.pid, choice, time.time(), inst_id)
-    if res is None:
-        return
-
-    p.score += res["points"]
-    if res["correct"]:
-        p.lines += 1          # reuse `lines` as the correct-answer counter
-
-    # --- the payoff: a correct answer earns a jet part ---------------------
-    award = None
-    if p.loadout is None:
-        p.loadout = partsmod.Loadout()
-    heat = res.get("multiplier", 1) - 1
-
-    if res["correct"]:
-        award = p.loadout.award(partsmod.roll_part(heat))
-    elif res["doctored"]:
-        # Sabotaged: they answered honestly and were marked wrong, so they are
-        # handed a part that looks fine and will fail mid-dogfight. They are
-        # told they earned it — that is the whole trick.
-        award = p.loadout.award(partsmod.make_faulty(heat=heat))
-
-    await send(p.ws, {"t": "answer_result", **res})
-    if award:
-        await send(p.ws, {"t": "part", **award,
-                          "loadout": p.loadout.public()})
-    await broadcast_hosts({
-        "t": "quiz_fx", "name": p.name, "avatar": p.avatar,
-        "correct": res["correct"], "timedOut": res["timedOut"],
-        "points": res["points"], "multiplier": res["multiplier"],
-        "accuracy": round(GAME.quiz.accuracy(), 3),
-    })
-
-    if GAME.phase == "round" and p.alive:
-        # issue() prefers anything that queued up while they were busy
-        was_queued = bool(GAME.quiz.queued.get(p.pid))
-        inst = GAME.quiz.issue(p.pid)
-        await send(p.ws, {"t": "question", **inst.public(),
-                          "passed": was_queued})
-
-
-async def handle_quiz_pass(sender: Player, msg: dict):
-    """Flick a question you don't know at somebody who might."""
-    if GAME.quiz is None:
-        return
-    if sender.active_power and sender.active_power["id"] == "stuck":
-        await send(sender.ws, {"t": "toast", "text": "STUCK WITH IT — can't pass",
-                               "kind": "bad"})
-        return
-
-    target = None
-    if msg.get("targetPid"):
-        target = GAME.players.get(msg["targetPid"])
-    if target is None:
-        target = target_by_heading(sender, float(msg.get("heading", 0)))
-    if target is None or not target.alive or target.pid == sender.pid:
-        return
-
-    inst = GAME.quiz.take(sender.pid)
-    if inst is None:
-        return
-
-    silent = False
-    if sender.active_power and sender.active_power["id"] == "freepass":
-        silent = True
-        sender.active_power = None
-
-    doctor = bool(msg.get("doctor")) and sender.role == "imposter" \
-        and sender.clean_passes > 0
-    if doctor:
-        sender.clean_passes -= 1
-        await send(sender.ws, {"t": "clean_left", "n": sender.clean_passes})
-
-    sender.passes_made += 1
-    target.passes_taken += 1
-    if not silent:
-        sender.public_passes += 1
-
-    GAME.pass_log.append({
-        "from": sender.pid, "to": target.pid, "piece": "Q",
-        "heat": inst.heat + 1, "silent": silent, "t": time.time(),
-    })
-
-    landed = GAME.quiz.hand_to(inst, target.pid, sender.pid, sender.name,
-                               silent=silent, doctor=doctor)
-    if landed is not None:
-        # went straight onto their screen
-        await send(target.ws, {"t": "question", **landed.public(), "passed": True})
-    else:
-        # they were mid-question, so it waits its turn
-        await send(target.ws, {"t": "toast", "kind": "bad",
-                               "text": "A QUESTION IS QUEUED FOR YOU"})
-
-    # sender immediately gets a fresh one
-    nxt = GAME.quiz.issue(sender.pid)
-    await send(sender.ws, {"t": "question", **nxt.public()})
-
-    if not silent:
-        await broadcast_hosts({"t": "pass_fx", "from": sender.name,
-                               "to": target.name, "heat": inst.heat})
-
-
-async def handle_audit(p: Player):
-    """Proctor power: was the last question handed to me tampered with?"""
-    if GAME.quiz is None or p.role != "detective" or p.traces_left <= 0:
-        return
-    p.traces_left -= 1
-    info = GAME.quiz.audit(p.pid)
-    await send(p.ws, {"t": "audit", "info": info, "left": p.traces_left})
-
-
-async def handle_trace(p: Player):
-    if p.role != "detective" or p.traces_left <= 0:
-        return
-    p.traces_left -= 1
-    last = next((e for e in reversed(GAME.pass_log) if e["to"] == p.pid), None)
-    if last:
-        origin = GAME.players[last["from"]].name
-        await send(p.ws, {"t": "trace", "origin": origin,
-                          "piece": last["piece"], "left": p.traces_left})
-    else:
-        await send(p.ws, {"t": "trace", "origin": None, "left": p.traces_left})
-
-
-# ----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # APP
-# ----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 
-app = FastAPI(title="Trenchcoat")
+app = FastAPI(title="Merge Conflict at Mach 2")
 
 
 def lan_ip() -> str:
@@ -1122,15 +1101,40 @@ def lan_ip() -> str:
         s.close()
 
 
-# Set TRENCHCOAT_PUBLIC_URL to your https:// tunnel address (cloudflared/ngrok)
-# so the QR code points there. iOS refuses motion sensors over plain HTTP.
 PUBLIC_URL = {
-    "url": os.environ.get("TRENCHCOAT_PUBLIC_URL", "").rstrip("/")
+    "url": (os.environ.get("PUBLIC_URL", "")
+            or os.environ.get("RENDER_EXTERNAL_URL", "")).rstrip("/")
            or f"http://{lan_ip()}:{PORT}"
 }
 
 
+def base_url(request) -> str:
+    """
+    The address a phone should use to reach us.
+
+    PUBLIC_URL wins when set. Otherwise we read it off the incoming request,
+    honouring the proxy headers Render and Cloudflare set, so QR codes point
+    at the real hostname without anything to configure.
+    """
+    if os.environ.get("PUBLIC_URL") or os.environ.get("RENDER_EXTERNAL_URL"):
+        return PUBLIC_URL["url"]
+    try:
+        host = request.headers.get("x-forwarded-host") or \
+            request.headers.get("host")
+        proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+        if host:
+            return f"{proto}://{host}"
+    except Exception:
+        pass
+    return PUBLIC_URL["url"]
+
+
 @app.get("/")
+async def home():
+    return FileResponse("static/index.html")
+
+
+@app.get("/host")
 async def host_page():
     return FileResponse("static/host.html")
 
@@ -1140,14 +1144,32 @@ async def player_page():
     return FileResponse("static/player.html")
 
 
-@app.get("/join-url")
-async def join_url():
-    return {"url": PUBLIC_URL["url"] + "/play", "code": GAME.code}
+@app.post("/api/room")
+async def api_room(request: Request):
+    r = create_room()
+    return JSONResponse({"code": r.code,
+                         "join": base_url(request) + "/play?code=" + r.code})
+
+
+@app.get("/api/health")
+async def api_health():
+    """Render pings this to decide whether the service is up."""
+    return JSONResponse({"ok": True, "rooms": len(ROOMS)})
+
+
+@app.get("/api/room/{code}")
+async def api_room_check(code: str):
+    r = ROOMS.get(code.upper())
+    if not r:
+        return JSONResponse({"ok": False, "reason": "no such room"}, status_code=404)
+    return JSONResponse({"ok": True, "code": r.code, "phase": r.phase,
+                         "players": len(r.roster())})
 
 
 @app.get("/qr.png")
-async def qr_png():
-    img = qrcode.make(PUBLIC_URL["url"] + "/play", box_size=12, border=2)
+async def qr_png(request: Request, code: str = ""):
+    url = base_url(request) + "/play" + (f"?code={code}" if code else "")
+    img = qrcode.make(url, box_size=11, border=2)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return Response(buf.getvalue(), media_type="image/png")
@@ -1156,125 +1178,131 @@ async def qr_png():
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
     await ws.accept()
-    role_kind = None
     me: Optional[Player] = None
+    room: Optional[Room] = None
+    is_host = False
+
     try:
         while True:
             msg = json.loads(await ws.receive_text())
             t = msg.get("t")
 
-            if t == "hello_host":
-                role_kind = "host"
-                GAME.hosts.append(ws)
-                await push_state()
+            # ---- joining a room --------------------------------------
+            if t == "host_watch":
+                code = str(msg.get("code", "")).upper()
+                room = ROOMS.get(code)
+                if not room:
+                    await send(ws, {"t": "join_error", "reason": "ROOM CLOSED"})
+                    continue
+                is_host = True
+                room.hosts.append(ws)
+                room.touched = time.time()
+                await push_state(room)
                 continue
 
             if t == "join":
-                pid = msg.get("pid") or f"p{int(time.time()*1000)%100000}{random.randint(10,99)}"
-                me = GAME.players.get(pid) or Player(pid=pid)
+                code = str(msg.get("code", "")).upper()
+                room = ROOMS.get(code)
+                if not room:
+                    await send(ws, {"t": "join_error", "reason": "NO SUCH ROOM"})
+                    continue
+                if room.phase not in ("lobby", "results") and \
+                        not msg.get("pid") in room.players:
+                    await send(ws, {"t": "join_error",
+                                    "reason": "GAME ALREADY IN PROGRESS"})
+                    continue
+                pid = msg.get("pid") or \
+                    f"p{int(time.time()*1000)%100000}{random.randint(10,99)}"
+                me = room.players.get(pid) or Player(pid=pid)
                 me.ws = ws
                 me.connected = True
-                me.name = (msg.get("name") or "PLAYER")[:14].upper()
+                me.name = (msg.get("name") or "PILOT")[:14].upper()
                 av = str(msg.get("avatar") or "fox")[:16]
                 me.avatar = av if av in AVATAR_IDS else "fox"
                 me.joined = True
-                GAME.players[pid] = me
-                role_kind = "player"
-                await send(ws, {"t": "joined", "pid": pid, "name": me.name})
-                await push_state()
+                room.players[pid] = me
+                room.touched = time.time()
+                await send(ws, {"t": "joined", "pid": pid, "name": me.name,
+                                "code": room.code})
+                await push_state(room)
                 continue
 
-            # Host-level commands: these arrive on a connection that has no
-            # Player attached, so they must be handled before the guard below.
+            if room is None:
+                continue
+            room.touched = time.time()
+
+            # ---- host controls ---------------------------------------
             if t == "start":
-                if GAME.phase in ("lobby", "results"):
-                    await start_game(fill=bool(msg.get("fill")),
+                if room.phase in ("lobby", "results"):
+                    await start_game(room, fill=bool(msg.get("fill")),
                                      settings=msg.get("settings"))
                 continue
 
             if t == "reset":
-                await reset_to_lobby()
+                await reset_to_lobby(room)
                 continue
 
             if me is None:
                 continue
 
+            # ---- player messages -------------------------------------
             if t == "answer":
                 me.answered = True
-                await deliver_role(me)
-                await push_state()
+                await deliver_agenda(room, me)
+                await push_state(room)
 
             elif t == "heading":
                 me.heading = float(msg.get("h", 0))
 
             elif t == "pass":
-                if GAME.phase == "round":
-                    if GAME.mode == "quiz":
-                        await handle_quiz_pass(me, msg)
-                    else:
-                        await handle_pass(me, msg)
+                if room.phase == "round":
+                    await handle_pass(room, me, msg)
 
-            # NB: deliberately not "answer" — that one answers the phone call.
+            elif t == "quiz_answer":
+                if room.phase == "round":
+                    iid = msg.get("inst")
+                    await resolve_answer(room, me, int(msg.get("choice", -1)),
+                                         int(iid) if iid is not None else None)
+
+            elif t == "trade":
+                await handle_trade(room, me, msg)
+
+            elif t == "inspect":
+                await handle_inspect(room, me, msg)
+
+            elif t == "vote":
+                if room.phase == "vote" and msg.get("target"):
+                    room.votes[me.pid] = msg["target"]
+                    await broadcast_hosts(room, {
+                        "t": "vote_cast", "n": len(room.votes),
+                        "of": len(room.alive_players())})
+
             elif t == "ctl":
-                if GAME.fight and GAME.fight.running:
-                    GAME.fight.control(me.pid,
-                                       float(msg.get("steer", 0.0)),
+                if room.fight and room.fight.running:
+                    room.fight.control(me.pid, float(msg.get("steer", 0.0)),
                                        float(msg.get("throttle", 0.5)),
                                        bool(msg.get("fire", False)))
 
             elif t == "missile":
-                if GAME.fight and GAME.fight.running:
-                    if GAME.fight.fire_missile(me.pid, time.time()):
-                        await send(me.ws, {"t": "missile_away"})
-
-            elif t == "quiz_answer":
-                if GAME.phase == "round" and GAME.mode == "quiz":
-                    iid = msg.get("inst")
-                    await resolve_answer(me, int(msg.get("choice", -1)),
-                                         int(iid) if iid is not None else None)
-
-            elif t == "placed":
-                me.lines += int(msg.get("lines", 0))
-                me.score += int(msg.get("score", 0))
-
-            elif t == "topout":
-                me.alive = False
-                await push_state()
-
-            elif t == "revive":
-                me.alive = True
-
-            elif t == "trace":
-                if GAME.mode == "quiz":
-                    await handle_audit(me)
-                else:
-                    await handle_trace(me)
-
-            elif t == "vote":
-                if GAME.phase == "vote" and msg.get("target"):
-                    GAME.votes[me.pid] = msg["target"]
-                    await broadcast_hosts({"t": "vote_cast", "n": len(GAME.votes),
-                                           "of": len(GAME.alive_players())})
-
-            elif t == "score_sync":
-                me.score = int(msg.get("score", me.score))
-                me.lines = int(msg.get("lines", me.lines))
-                await broadcast_hosts({"t": "scores", "players": GAME.roster()})
+                if room.fight and room.fight.running:
+                    if room.fight.fire_missile(me.pid, time.time()):
+                        await send(ws, {"t": "missile_away"})
 
     except WebSocketDisconnect:
         pass
     except Exception:
         pass
     finally:
-        if role_kind == "host" and ws in GAME.hosts:
-            GAME.hosts.remove(ws)
-        if me:
-            me.connected = False
-            me.ws = None
-            try:
-                await push_state()
-            except Exception:
-                pass
+        if room:
+            if is_host and ws in room.hosts:
+                room.hosts.remove(ws)
+            if me:
+                me.connected = False
+                me.ws = None
+                try:
+                    await push_state(room)
+                except Exception:
+                    pass
 
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -1282,18 +1310,17 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 if __name__ == "__main__":
     ip = lan_ip()
-    print("\n" + "=" * 58)
-    print("  TRENCHCOAT — hidden-role Tetris")
-    print("=" * 58)
-    print(f"  HOST DISPLAY  ->  http://{ip}:{PORT}")
-    print(f"  PHONES JOIN   ->  {PUBLIC_URL['url']}/play")
-    print(f"  ROOM CODE     ->  {GAME.code}")
-    print("=" * 58)
+    print("\n" + "=" * 60)
+    print("  MERGE CONFLICT AT MACH 2")
+    print("=" * 60)
+    print(f"  OPEN THIS   ->  {PUBLIC_URL['url']}")
+    print(f"  ON THIS PC  ->  http://{ip}:{PORT}")
+    print("=" * 60)
     if PUBLIC_URL["url"].startswith("https://"):
-        print("  HTTPS tunnel active — motion sensors will work on iPhones.")
+        print("  HTTPS active — motion controls will work on iPhones.")
     else:
-        print("  Phones must be on the SAME WI-FI.")
-        print("  iPhones need HTTPS for motion — set TRENCHCOAT_PUBLIC_URL")
-        print("  to a cloudflared/ngrok https URL. See README.md")
-    print("=" * 58 + "\n")
+        print("  Phones must be on the SAME Wi-Fi.")
+        print("  iPhones need HTTPS for motion — set PUBLIC_URL to an")
+        print("  https:// tunnel address. See README.md")
+    print("=" * 60 + "\n")
     uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="warning")

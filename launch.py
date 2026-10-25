@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-launch.py — one-click startup for TRENCHCOAT.
+launch.py — one-click startup for MERGE CONFLICT AT MACH 2.
 
 Handles everything the manual steps did:
   * installs missing dependencies
@@ -165,7 +165,7 @@ def main():
 
     os.chdir(HERE)
     rule()
-    say("  TRENCHCOAT — starting up")
+    say("  MERGE CONFLICT AT MACH 2 — starting up")
     rule()
 
     if port_in_use(PORT):
@@ -182,7 +182,7 @@ def main():
     if args.tunnel:
         public = start_tunnel()
     if public:
-        os.environ["TRENCHCOAT_PUBLIC_URL"] = public
+        os.environ["PUBLIC_URL"] = public
 
     import uvicorn
     import server  # imported AFTER the env var is set
@@ -202,7 +202,7 @@ def main():
         say("  Phones must be on the SAME Wi-Fi, and iPhones will NOT")
         say("  have motion controls. Run START-TUNNEL for that.")
     say("")
-    say("  Testing alone? Click SOLO TEST on the host display.")
+    say("  Open the link, hit HOST GAME, then scan the QR.")
     say("  Close this window to stop the game.")
     rule()
 

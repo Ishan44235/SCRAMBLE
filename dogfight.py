@@ -103,6 +103,7 @@ class Jet:
     last_missile: float = 0.0
 
     kills: int = 0
+    bounty_kills: int = 0
     deaths: int = 0
     damage_done: float = 0.0
     alive: bool = True
@@ -130,11 +131,16 @@ class Jet:
 
 
 class Dogfight:
-    def __init__(self, seconds: int = FIGHT_SECONDS):
+    def __init__(self, seconds: int = FIGHT_SECONDS, threat: str = "",
+                 bounty: int = 3):
+        self.threat = threat        # pid the table marked; kills on them pay more
+        self.bounty = bounty
+        self.on_kill = None         # set by the server for Scavenger
         self.jets: Dict[str, Jet] = {}
         self.bullets: List[Bullet] = []
         self.missiles: List[Missile] = []
         self.events: List[dict] = []
+        self.kill_log: List[dict] = []   # every kill, for agenda scoring
         self.started = 0.0
         self.seconds = seconds
         self.running = False
@@ -330,14 +336,28 @@ class Dogfight:
         victim.alive = False
         victim.deaths += 1
         victim.respawn_at = now + RESPAWN_SECONDS
+        on_threat = bool(self.threat) and victim.pid == self.threat
+        self.kill_log.append({
+            "killer": shooter.pid if shooter else None,
+            "victim": victim.pid, "bounty": on_threat, "t": now,
+        })
         if shooter:
             shooter.kills += 1
+            if on_threat:
+                shooter.bounty_kills += 1
         self.events.append({
             "kind": "kill", "x": round(victim.x), "y": round(victim.y),
             "victim": victim.name, "victimPid": victim.pid,
             "killer": shooter.name if shooter else None,
-            "weapon": weapon,
+            "killerPid": shooter.pid if shooter else None,
+            "weapon": weapon, "bounty": on_threat,
         })
+        # the server hooks this to run Scavenger and Duelist
+        if shooter and self.on_kill:
+            try:
+                self.on_kill(shooter, victim, self)
+            except Exception:
+                pass
 
     def _respawns(self, now: float):
         for j in self.jets.values():
@@ -369,12 +389,19 @@ class Dogfight:
         }
 
     def standings(self) -> List[dict]:
-        rows = [{
-            "pid": j.pid, "name": j.name, "avatar": j.avatar,
-            "kills": j.kills, "deaths": j.deaths,
-            "damage": round(j.damage_done),
-            "score": j.kills * 100 - j.deaths * 25 + int(j.damage_done * 0.2),
-            "failed": j.failed,
-        } for j in self.jets.values()]
+        rows = []
+        for j in self.jets.values():
+            # a bounty kill pays `bounty` times a normal one
+            extra = j.bounty_kills * 100 * (self.bounty - 1)
+            rows.append({
+                "pid": j.pid, "name": j.name, "avatar": j.avatar,
+                "kills": j.kills, "bountyKills": j.bounty_kills,
+                "deaths": j.deaths,
+                "damage": round(j.damage_done),
+                "score": (j.kills * 100 + extra - j.deaths * 25
+                          + int(j.damage_done * 0.2)),
+                "failed": j.failed,
+                "wasThreat": j.pid == self.threat,
+            })
         rows.sort(key=lambda r: -r["score"])
         return rows

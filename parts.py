@@ -116,6 +116,22 @@ def roll_part(heat: int, slot: Optional[str] = None) -> dict:
     return part
 
 
+def roll_mystery(slot: Optional[str] = None) -> dict:
+    """
+    A sealed crate. Its odds ignore question heat entirely — flatter than a
+    normal drop at both ends, so it can be a legendary off a cold question or
+    junk off a scorching one. That gamble is the whole appeal.
+    """
+    slot = slot or random.choice(SLOTS)
+    tier = random.choices(TIERS, weights=[12, 20, 28, 25, 15], k=1)[0]
+    base = next(p for p in CATALOG[slot] if p["tier"] == tier)
+    part = dict(base)
+    part["slot"] = slot
+    part["faulty"] = False
+    part["sealed"] = True
+    return part
+
+
 def make_faulty(slot: Optional[str] = None, heat: int = 0) -> dict:
     """
     A sabotaged part. It presents as a real part of its tier — the player sees
@@ -176,6 +192,43 @@ class Loadout:
             "part": public_part(part, slot),
             "kept": public_part(old, slot),
         }
+
+    def corrode(self) -> Optional[dict]:
+        """
+        Rust: knock one fitted part down a tier. Picks the best part, because
+        losing your prize engine stings in a way that losing junk does not.
+        Returns what happened, or None if there is nothing to corrode.
+        """
+        fitted = [(s, p) for s, p in self.parts.items() if p]
+        if not fitted:
+            return None
+        slot, part = max(fitted, key=lambda sp: TIER_RANK[sp[1]["tier"]])
+
+        rank = TIER_RANK[part["tier"]]
+        if rank == 0:
+            self.parts[slot] = None          # common rusts away entirely
+            return {"slot": slot, "from": public_part(part, slot), "to": None}
+
+        lower = TIERS[rank - 1]
+        base = next(p for p in CATALOG[slot] if p["tier"] == lower)
+        new = dict(base, slot=slot, faulty=part.get("faulty", False))
+        self.parts[slot] = new
+        return {"slot": slot, "from": public_part(part, slot),
+                "to": public_part(new, slot)}
+
+    def strip_best(self) -> Optional[dict]:
+        """Scavenger: tear the best part off this jet and hand it over."""
+        fitted = [(s, p) for s, p in self.parts.items() if p]
+        if not fitted:
+            return None
+        slot, part = max(fitted, key=lambda sp: TIER_RANK[sp[1]["tier"]])
+        self.parts[slot] = None
+        return part
+
+    def best_tier_rank(self) -> int:
+        """Rank of the rarest single part on this jet, or -1 if bare."""
+        ranks = [TIER_RANK[p["tier"]] for p in self.parts.values() if p]
+        return max(ranks) if ranks else -1
 
     def stat(self, slot: str, key: str):
         p = self.parts[slot]

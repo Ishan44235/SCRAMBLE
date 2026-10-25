@@ -17,18 +17,15 @@ const STATE = {
   powerCountdown: 20,
   powerGap: 20,        // seconds between draws, sent by the server
   powerLeft: 3,        // draws remaining this round
-  tracesLeft: 2,
   cleanLeft: 3,
   voteTarget: null,
   aiming: false,
-  mode: 'tetris',
   score: 0,
   quizWired: false,
   avatar: localStorage.getItem('tc_avatar') || 'fox',
-  dumpedOnMe: {},     // pid -> how many pieces they've visibly sent you
 };
 
-let ws = null, game = null, motion = new Motion();
+let ws = null, motion = new Motion();
 let lastT = performance.now();
 let endsAt = 0;
 
@@ -36,7 +33,6 @@ let endsAt = 0;
 function show(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('on'));
   $(id).classList.add('on');
-  if (id === 's-game') requestAnimationFrame(() => game && game.resize());
 }
 
 function toast(text, kind = '') {
@@ -53,13 +49,17 @@ function toast(text, kind = '') {
 }
 
 /* ---------------------------------------------------------- socket */
+const ROOM = (new URLSearchParams(location.search).get('code') || '').toUpperCase();
+if (!ROOM) location.replace('/');
+
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/ws`);
 
   ws.onopen = () => {
     if (STATE.name) {
-      send({ t: 'join', pid: STATE.pid, name: STATE.name, avatar: STATE.avatar });
+      send({ t: 'join', code: ROOM, pid: STATE.pid,
+             name: STATE.name, avatar: STATE.avatar });
     }
   };
   ws.onmessage = e => handle(JSON.parse(e.data));
@@ -76,6 +76,11 @@ function send(o) {
 function handle(m) {
   switch (m.t) {
 
+    case 'join_error':
+      toast(m.reason, 'bad');
+      setTimeout(() => location.replace('/'), 1800);
+      break;
+
     case 'joined':
       STATE.pid = m.pid;
       STATE.name = m.name;
@@ -87,18 +92,15 @@ function handle(m) {
       STATE.roster = m.players;
       STATE.round = m.round || 1;
       STATE.rounds = m.rounds;
-      if (m.mode) STATE.mode = m.mode;
       const prev = STATE.phase;
       STATE.phase = m.phase;
       endsAt = performance.now() + (m.endsIn || 0) * 1000;
 
       if (m.phase !== 'round') {
         $('finalWarn').classList.remove('on');
-        $('hudClock').style.color = '';
       }
 
       $('lobbyCount').textContent = m.players.length + ' player' + (m.players.length === 1 ? '' : 's');
-      $('hudRound').textContent = `${STATE.round}/${STATE.rounds}`;
       $('qRound').textContent = `${STATE.round}/${STATE.rounds}`;
 
       if (m.phase === 'lobby' && prev !== 'lobby') show('s-lobby');
@@ -106,7 +108,10 @@ function handle(m) {
       if (m.phase === 'round' && prev !== 'round') {
         startRound();
       }
-      if (m.phase === 'discussion' && prev !== 'discussion') show('s-discuss');
+      if (m.phase === 'discussion' && prev !== 'discussion') {
+        show('s-discuss');
+        buildTradePanel();
+      }
       if (m.phase === 'vote' && prev !== 'vote') buildVote();
       if (m.phase === 'results') showResults(m);
       break;
@@ -123,7 +128,6 @@ function handle(m) {
       break;
 
     case 'round_start':
-      STATE.mode = m.mode || STATE.mode;
       startRound();
       break;
 
@@ -147,6 +151,18 @@ function handle(m) {
 
     case 'part':
       showPartPop(m);
+      break;
+
+    case 'crates':
+      setCrates(m.n);
+      break;
+
+    case 'crate_open':
+      showCrateOpen(m);
+      break;
+
+    case 'rusted':
+      showRusted(m);
       break;
 
     case 'fight_start':
@@ -182,10 +198,6 @@ function handle(m) {
       if (m.remaining !== undefined) STATE.powerLeft = m.remaining;
       break;
 
-    case 'incoming':
-      onIncoming(m);
-      break;
-
     case 'absorbed':
       toast(`ABSORBED SILENTLY · ${m.left} LEFT`, 'good');
       break;
@@ -193,8 +205,6 @@ function handle(m) {
     case 'trace':
       if (m.origin) toast(`TRACE → ${m.origin}`, 'good');
       else toast('TRACE → NOTHING YET', 'warn');
-      STATE.tracesLeft = m.left;
-      $('btnTrace').querySelector('.c-sub').textContent = m.left + ' LEFT';
       break;
 
     case 'clean_left':
@@ -207,15 +217,26 @@ function handle(m) {
       break;
 
     case 'vote_start':
-      buildVote(m.players);
+      buildVote(m.players, m.kind);
+      break;
+
+    case 'marked':
+      toast('YOU ARE THE THREAT', 'bad');
+      haptic([40, 60, 40]);
+      STATE.marked = m;
+      break;
+
+    case 'threat':
+      showThreat(m);
+      break;
+
+    case 'traded':
+      showTraded(m);
       break;
 
     case 'to_lobby':
       STATE.role = null;
-      STATE.dumpedOnMe = {};
       STATE.voteTarget = null;
-      if (game) game.reset();
-      $('dumpers').innerHTML = '';
       show('s-lobby');
       toast('BACK IN THE LOBBY', 'good');
       break;
@@ -246,6 +267,7 @@ function paintRole(m) {
   badge.style.color = m.color;
   $('roleName').style.color = m.color;
 
+  STATE.role = m;
   if (m.knows) {
     $('roleKnows').style.display = 'block';
     $('knowsLabel').textContent = m.knows.label;
@@ -254,7 +276,6 @@ function paintRole(m) {
     $('roleKnows').style.display = 'none';
   }
 
-  $('btnTrace').style.display = m.role === 'detective' ? '' : 'none';
   if (m.role !== 'detective') {
     document.querySelector('.controls').style.gridTemplateColumns = '1fr 1fr';
     $('btnPass').style.gridColumn = 'span 2';
@@ -263,48 +284,19 @@ function paintRole(m) {
   haptic(60);
 }
 
-/* ---------------------------------------------------------- game */
+/* ---------------------------------------------------------- round */
 function startRound() {
   startLoop();
-  if (STATE.mode === 'quiz') {
-    show('s-quiz');
-    QUIZ.correctCount = 0;
-    STATE.score = 0;
-    $('qScore').textContent = '0';
-    $('qStreak').textContent = '0';
-    if (!STATE.quizWired) { wireQuizControls(); STATE.quizWired = true; }
-    return;
-  }
-  show('s-game');
-  if (!game) {
-    game = new Tetris($('board'), {
-      onLock: (cleared, score) => {
-        $('hudScore').textContent = game.score;
-        $('hudLines').textContent = game.lines;
-        if (cleared) {
-          toast(cleared === 4 ? 'TETRIS!' : `${cleared} LINE${cleared > 1 ? 'S' : ''}`, 'good');
-          haptic(40);
-        }
-        send({ t: 'placed', lines: cleared, score: 0 });
-        send({ t: 'score_sync', score: game.score, lines: game.lines });
-      },
-      onTopOut: () => {
-        toast('TOPPED OUT', 'bad');
-        send({ t: 'topout' });
-        setTimeout(() => { game.reset(); send({ t: 'revive' }); }, 2200);
-      },
-      onBlocked: msg => toast(msg, 'bad'),
-      onPiece: () => game.drawNext($('nextCv')),
-    });
-    wireControls();
-  }
-  game.reset();
-  game.resize();
-  game.spawn();
+  show('s-quiz');
+  QUIZ.correctCount = 0;
+  STATE.score = 0;
+  $('qScore').textContent = '0';
+  $('qStreak').textContent = '0';
+  if (!STATE.quizWired) { wireQuizControls(); STATE.quizWired = true; }
+  renderJetStrip();
 }
 
-/* One render loop drives every mode, so it must start regardless of whether
-   the Tetris engine was ever created. */
+/* One render loop drives the quiz and the dogfight alike. */
 let loopRunning = false;
 function startLoop() {
   if (loopRunning) return;
@@ -318,7 +310,7 @@ function loop() {
   const dt = Math.min(60, now - lastT);
   lastT = now;
 
-  if (STATE.mode === 'quiz' && STATE.phase === 'round') {
+  if (STATE.phase === 'round') {
     quizTick();
     const left = Math.max(0, (endsAt - now) / 1000);
     $('qClock').textContent = fmt(left);
@@ -337,46 +329,6 @@ function loop() {
       else $('qPsTimer').textContent = rem.toFixed(1) + 's';
     }
     if (STATE.aiming) updateAim();
-  }
-
-  if (game && STATE.phase === 'round' && STATE.mode !== 'quiz') {
-    game.tick(dt);
-    game.draw();
-
-    const left = Math.max(0, (endsAt - now) / 1000);
-    $('hudClock').textContent = fmt(left);
-
-    // final-ten-seconds warning border
-    const urgent = left > 0 && left <= 10;
-    $('finalWarn').classList.toggle('on', urgent);
-    $('hudClock').style.color = urgent ? 'var(--danger)' : '';
-    if (urgent && Math.ceil(left) !== STATE.lastTick) {
-      STATE.lastTick = Math.ceil(left);
-      haptic(14);
-    }
-
-    // power countdown ring
-    const t = STATE.powerCountdown;
-    $('ptNum').textContent = Math.ceil(t);
-    const frac = Math.max(0, Math.min(1, 1 - (t / (STATE.powerGap || 20))));
-    $('ptFill').setAttribute('stroke-dashoffset', (97.4 * frac).toFixed(1));
-    STATE.powerCountdown = Math.max(0, t - dt / 1000);
-
-    // active card expiry
-    if (STATE.card && STATE.cardExpires) {
-      const rem = (STATE.cardExpires - now) / 1000;
-      if (rem <= 0) clearCard();
-      else $('psTimer').textContent = rem.toFixed(1) + 's';
-    }
-
-    if (STATE.aiming) updateAim();
-    updateTiltMeter();
-  }
-
-  if (STATE.phase === 'fight') fightTick();
-  if (STATE.phase === 'fight' && $('s-hangar').classList.contains('on')) {
-    $('hangarClock').textContent =
-      Math.max(0, Math.ceil((FIGHT.endsAt - now) / 1000));
   }
 
   if (STATE.phase === 'intermission') {
@@ -417,43 +369,18 @@ function updateTiltMeter(needleId = 'tbNeedle') {
 }
 
 /* ---------------------------------------------------------- controls */
-function wireControls() {
-  const tap = (el, fn) => {
-    el.addEventListener('touchstart', e => { e.preventDefault(); fn(); haptic(12); }, { passive: false });
-    el.addEventListener('click', e => { e.preventDefault(); fn(); });
-  };
-
-  tap($('btnRotate'), () => game.rotate());
-  tap($('btnDrop'), () => game.hardDrop());
-  tap($('btnPass'), () => openAim());
-  tap($('btnTrace'), () => { if (STATE.tracesLeft > 0) send({ t: 'trace' }); });
-  tap($('aimCancel'), () => closeAim());
-
-  // Swipe controls are deliberately NOT bound. Moving the piece is tilt-only —
-  // the buttons cover rotate/drop/pass for anyone whose sensors are refused.
-
-  // tapping the warning re-requests motion permission
-  $('motionWarn').addEventListener('click', async () => {
+/* The motion-permission warning is the only shared control left; everything
+   else lives in the quiz or the dogfight. */
+function wireMotionWarn() {
+  const w = $('motionWarn');
+  if (!w || w.dataset.wired) return;
+  w.dataset.wired = '1';
+  w.addEventListener('click', async () => {
     const ok = await motion.request();
     toast(ok ? 'MOTION READY' : 'STILL BLOCKED — CHECK BROWSER SETTINGS',
           ok ? 'good' : 'bad');
     if (ok) motion.calibrateTilt();
   });
-
-  // motion bindings
-  motion.on.move = d => { if (STATE.phase === 'round' && !STATE.aiming) game.move(d); };
-  motion.on.rotate = () => { if (STATE.phase === 'round' && !STATE.aiming) { game.rotate(); haptic(10); } };
-  motion.on.drop = () => { if (STATE.phase === 'round' && !STATE.aiming) { game.hardDrop(); haptic(25); } };
-  motion.on.flick = () => { if (STATE.phase === 'round' && !STATE.aiming) openAim(); };
-  motion.on.shake = () => {
-    if (STATE.phase !== 'round') return;
-    if (STATE.card && STATE.card.id === 'forge') { game.forgeCycle(); haptic(12); return; }
-    if (STATE.role && STATE.role.role === 'detective' && STATE.tracesLeft > 0) {
-      send({ t: 'trace' }); haptic(60);
-    }
-  };
-
-  window.addEventListener('resize', () => game && game.resize());
 }
 
 /* ---------------------------------------------------------- quiz input */
@@ -500,13 +427,8 @@ function wireQuizControls() {
 
 /* ---------------------------------------------------------- aiming */
 function openAim() {
-  if (STATE.mode === 'quiz') {
-    if (QUIZ.inst === null || QUIZ.locked) return;
-    if (STATE.noPass) { toast('STUCK WITH IT — CAN\'T PASS', 'bad'); return; }
-  } else {
-    if (!game || !game.piece) return;
-    if (game.noPass) { toast('STUCK WITH IT — CAN\'T PASS', 'bad'); return; }
-  }
+  if (QUIZ.inst === null || QUIZ.locked) return;
+  if (STATE.noPass) { toast('LOCKED BAY — CAN\'T PASS', 'bad'); return; }
   STATE.aiming = true;
   $('aim').classList.add('on');
   motion.calibrate();
@@ -563,24 +485,11 @@ function closeAim() {
 }
 
 function doPass(pid) {
-  const isCheat = STATE.role && STATE.role.role === 'imposter' && STATE.cleanLeft > 0;
-
-  if (STATE.mode === 'quiz') {
-    if (QUIZ.inst === null) { closeAim(); return; }
-    // The Cheat doctors the answer key on the way out.
-    send({ t: 'pass', targetPid: pid, doctor: isCheat });
-    closeAim();
-    haptic(35);
-    toast(isCheat ? 'PASSED — KEY SWAPPED' : 'PASSED', isCheat ? 'bad' : 'good');
-    return;
-  }
-
-  const data = game.takeForPass();
-  if (!data) { closeAim(); return; }
-  send({ t: 'pass', targetPid: pid, piece: data.piece, heat: data.heat, clean: isCheat });
+  if (QUIZ.inst === null) { closeAim(); return; }
+  send({ t: 'pass', targetPid: pid });
   closeAim();
   haptic(35);
-  toast('PASSED', 'good');
+  toast('PASSED IT ON', 'good');
 }
 
 // confirm an aimed pass with a second forward flick or a tap on the ring
@@ -589,7 +498,8 @@ $('aimRing') && $('aimRing').addEventListener('click', () => {
 });
 
 /* ---------------------------------------------------------- cards */
-const ICONS = { forge: '⚒️', shield: '🪞', ghost: '👻', lock: '🔒', fire: '🔥', swirl: '🌀' };
+const ICONS = { forge: '⚒️', shield: '🪞', ghost: '👻', lock: '🔒', fire: '🔥', swirl: '🌀',
+                crate: '📦', split: '✂️', wind: '💨', rust: '🪨', eye: '🕶️' };
 
 function applyCard(card) {
   STATE.card = card;
@@ -599,17 +509,15 @@ function applyCard(card) {
   // reset modifiers, then apply (game is null in quiz mode)
   STATE.inverted = false;
   STATE.noPass = false;
-  if (game) { game.inverted = false; game.noPass = false; }
 
   if (card.id === 'drunk') {
     STATE.inverted = true;
-    if (game) game.inverted = true;
   }
-  if (card.id === 'stuck') {
+  if (card.id === 'stuck' || card.id === 'locked') {
     STATE.noPass = true;
-    if (game) game.noPass = true;
   }
-  if (card.id === 'hothands' && game) game.mustPass = card.charges || 2;
+  if (card.id === 'hothands') STATE.mustPass = card.charges || 2;
+  if (card.id === 'blindspot') quizBlindSpot(3000);
 
   // big card flash
   $('pcIcon').textContent = ICONS[card.icon] || '⚡';
@@ -633,53 +541,9 @@ function clearCard() {
   STATE.card = null;
   STATE.cardExpires = 0;
   STATE.inverted = false;
-  if (game) { game.inverted = false; }
   ['psDot', 'qPsDot'].forEach(id => { if ($(id)) $(id).style.background = 'var(--text-mute)'; });
   ['psName', 'qPsName'].forEach(id => { if ($(id)) $(id).textContent = 'NO CARD — NEXT DRAW SOON'; });
   ['psTimer', 'qPsTimer'].forEach(id => { if ($(id)) $(id).textContent = ''; });
-}
-
-/* ---------------------------------------------------------- incoming */
-function onIncoming(m) {
-  game.receive(m.piece, m.heat, m.from);
-  game.drawNext($('nextCv'));
-  haptic([30, 40, 30]);
-
-  if (!m.silent) {
-    $('flash').classList.add('on');
-    setTimeout(() => $('flash').classList.remove('on'), 420);
-    toast(`${m.from} PASSED YOU A ${m.piece}`, 'bad');
-    if (m.fromPid) {
-      STATE.dumpedOnMe[m.fromPid] = (STATE.dumpedOnMe[m.fromPid] || 0) + 1;
-      renderDumpers();
-    }
-  }
-  // a silent pass gets no flash, no toast and no tally entry — that is
-  // exactly what Clean Pass and Free Pass are buying.
-}
-
-/**
- * Top strip: who has visibly dumped on you, and how many times.
- * DETECTIVE ONLY — handing everyone a running tally would give the Imposter
- * away without anyone having to deduce anything.
- */
-function renderDumpers() {
-  if (!STATE.role || STATE.role.role !== 'detective') {
-    $('dumpers').innerHTML = '';
-    return;
-  }
-  const others = STATE.roster.filter(p => p.pid !== STATE.pid);
-  if (!others.length) { $('dumpers').innerHTML = ''; return; }
-  const max = Math.max(1, ...Object.values(STATE.dumpedOnMe));
-  $('dumpers').innerHTML = others.map(p => {
-    const c = STATE.dumpedOnMe[p.pid] || 0;
-    const hot = c > 0 && c >= max;
-    return `<div class="dmp${hot ? ' hot' : ''}">
-      ${avatarSVG(p.avatar || 'fox', 22, { bg: '#0b0d14' })}
-      <span class="d-n">${p.name}</span>
-      <span class="d-c">${c}</span>
-    </div>`;
-  }).join('');
 }
 
 /** Between-round break showing what the table saw everyone pass. */
@@ -723,7 +587,16 @@ function paintAnalyst(rows) {
 }
 
 /* ---------------------------------------------------------- vote */
-function buildVote(players) {
+function buildVote(players, kind) {
+  const threat = (kind || STATE.voteKind) === 'threat';
+  STATE.voteKind = kind || STATE.voteKind;
+  if (threat) {
+    document.querySelector('#s-vote h2').textContent = 'Who is the biggest threat?';
+    document.querySelector('#s-vote .eyebrow').textContent = 'THREAT VOTE';
+    document.querySelector('#s-vote .vote-sub').innerHTML =
+      'Whoever the table marks flies with a <b>3× bounty</b> on them — ' +
+      'and an afterburner to survive it.';
+  }
   const list = (players || STATE.roster).filter(p => p.pid !== STATE.pid);
   $('voteGrid').innerHTML = '';
   list.forEach(p => {
@@ -748,7 +621,7 @@ function buildVote(players) {
 /* ---------------------------------------------------------- results */
 function showResults(m) {
   const mine = STATE.role ? STATE.role.team : 'crew';
-  $('dumpers').innerHTML = '';
+
   const won = m.winner === mine;
   $('resEyebrow').textContent = won ? 'YOU WIN' : 'YOU LOSE';
   $('resTitle').textContent = m.winner === 'imposter' ? 'IMPOSTER WINS' : 'CREW WINS';
@@ -930,7 +803,7 @@ $('diagBtn').onclick = () => {
 // removed from the DOM on join (for iOS Shake-to-Undo), so rebuild the page.
 $('changeBtn').onclick = () => location.reload();
 
-startLoop();   // drives quiz, tetris and the dogfight alike
+startLoop();   // drives the quiz and the dogfight alike
 
 $('answerBtn').onclick = () => { send({ t: 'answer' }); haptic(40); };
 $('declineBtn').onclick = () => toast('YOU HAVE TO ANSWER', 'warn');

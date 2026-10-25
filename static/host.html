@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TRENCHCOAT — Host</title>
+<title>MERGE CONFLICT AT MACH 2 — Host</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
@@ -19,6 +19,7 @@ body.urgent::after {
 </style>
 </head>
 <body>
+<canvas id="sky"></canvas>
 <div class="host">
 
   <header class="host-head">
@@ -31,8 +32,8 @@ body.urgent::after {
         <path d="M32 34v20" stroke="#3e8fff" stroke-width="1.6"/>
       </svg>
       <div>
-        <div class="hl-title">TRENCHCOAT</div>
-        <div class="hl-sub">HIDDEN-ROLE TETRIS</div>
+        <div class="hl-title">MACH 2</div>
+        <div class="hl-sub">MERGE CONFLICT AT MACH 2</div>
       </div>
     </div>
     <div class="host-phase" id="phaseChip">LOBBY</div>
@@ -58,21 +59,7 @@ body.urgent::after {
       </div>
 
       <div class="card settings" id="settingsPanel">
-        <div class="eyebrow">GAME MODE</div>
-        <div class="mode-pick">
-          <div class="mode-opt sel" data-mode="tetris">
-            <div class="mo-name">TRENCHCOAT</div>
-            <div class="mo-desc">Hidden-role Tetris. Tilt to move, flick to dump
-              pieces on rivals. The Imposter buries the table.</div>
-          </div>
-          <div class="mode-opt" data-mode="quiz">
-            <div class="mo-name">POP QUIZ</div>
-            <div class="mo-desc">Hidden-role trivia. Tilt to aim, twist to lock.
-              The Cheat doctors the answer key before passing it on.</div>
-          </div>
-        </div>
-
-        <div class="eyebrow" style="margin-top:24px">MATCH SETTINGS</div>
+        <div class="eyebrow">MATCH SETTINGS</div>
         <div class="set-grid">
           <label class="set">
             <span class="set-k">ROUND LENGTH</span>
@@ -219,24 +206,30 @@ body.urgent::after {
 
 </div>
 
+<script src="/static/js/skyfield.js"></script>
 <script src="/static/js/avatars.js"></script>
 <script src="/static/js/jetparts.js"></script>
 <script>
 const $ = id => document.getElementById(id);
+startSky(document.getElementById('sky'), { density: .7 });
 let ws, phase = 'lobby', endsAt = 0, powerAt = 0;
+
+const ROOM = (new URLSearchParams(location.search).get('code') || '').toUpperCase();
+if (!ROOM) location.replace('/');
 
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/ws`);
-  ws.onopen = () => ws.send(JSON.stringify({ t: 'hello_host' }));
+  ws.onopen = () => ws.send(JSON.stringify({ t: 'host_watch', code: ROOM }));
   ws.onmessage = e => handle(JSON.parse(e.data));
   ws.onclose = () => setTimeout(connect, 1200);
 }
 
-fetch('/join-url').then(r => r.json()).then(d => {
-  $('qrUrl').textContent = d.url.replace(/^https?:\/\//, '');
-  $('qrCode').textContent = d.code;
-});
+$('qr').src = '/qr.png?code=' + ROOM;
+$('qrCode').textContent = ROOM;
+fetch('/api/room/' + ROOM).then(r => r.json()).then(() => {
+  $('qrUrl').textContent = location.host + '/play?code=' + ROOM;
+}).catch(() => {});
 
 function view(name) {
   ['Lobby','Round','Discuss','Vote','Fight','Results'].forEach(v => {
@@ -268,10 +261,8 @@ function handle(m) {
     paintRoster(m.players);
     paintScores(m.players);
 
-    const isQuiz = m.mode === 'quiz';
-    $('accuracyPanel').style.display = isQuiz ? '' : 'none';
-    if (isQuiz) paintAccuracy(m.accuracy);
-    if (mid && m.mode) { gameMode = m.mode; paintMode(); }
+    $('accuracyPanel').style.display = '';
+    paintAccuracy(m.accuracy);
 
     const mid = ['round','calling','roles','vote','discussion'].includes(m.phase);
     if (m.settings) {
@@ -425,28 +416,8 @@ const SET_FIELDS = {
   fight_seconds: 'setFightSeconds',
 };
 let serverDefaults = null;
-let gameMode = localStorage.getItem('tc_mode') || 'tetris';
-
-function paintMode() {
-  document.querySelectorAll('.mode-opt').forEach(el =>
-    el.classList.toggle('sel', el.dataset.mode === gameMode));
-  // round length means something different in each mode
-  const rs = $('setRoundSeconds').closest('.set').querySelector('.set-k');
-  rs.textContent = gameMode === 'quiz' ? 'QUESTION ROUND LENGTH' : 'ROUND LENGTH';
-  // the dogfight only exists in quiz mode
-  $('setFightWrap').style.display = gameMode === 'quiz' ? '' : 'none';
-}
-document.querySelectorAll('.mode-opt').forEach(el => {
-  el.onclick = () => {
-    gameMode = el.dataset.mode;
-    localStorage.setItem('tc_mode', gameMode);
-    paintMode();
-    updateSummary();
-  };
-});
-
 function readSettings() {
-  const out = { mode: gameMode };
+  const out = {};
   for (const [key, id] of Object.entries(SET_FIELDS)) {
     const el = $(id);
     let v = parseInt(el.value, 10);
@@ -469,7 +440,7 @@ function updateSummary() {
   const s = readSettings();
   const perRound = s.round_seconds * s.rounds;
   const total = perRound + s.discussion_seconds + s.vote_seconds +
-    (gameMode === 'quiz' ? s.fight_seconds + 10 : 0);
+    s.fight_seconds + 10;
   const mins = Math.floor(total / 60), secs = total % 60;
   const spacing = s.powers_per_round
     ? `a card every ${(s.round_seconds / s.powers_per_round).toFixed(0)}s`
@@ -640,7 +611,6 @@ try {
   const saved = JSON.parse(localStorage.getItem('tc_settings') || 'null');
   if (saved) applySettings(saved);
 } catch (e) {}
-paintMode();
 
 $('startBtn').onclick = () =>
   ws.send(JSON.stringify({ t: 'start', settings: readSettings() }));

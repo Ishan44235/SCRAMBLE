@@ -1,5 +1,5 @@
 """
-quiz.py — the question engine for TRENCHCOAT's quiz mode.
+quiz.py — the question engine for MERGE CONFLICT AT MACH 2.
 
 Design rule that drives everything here: the correct answer NEVER leaves the
 server until the question is resolved. The client is sent shuffled options and

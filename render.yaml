@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: merge-conflict-at-mach-2
+    runtime: python
+    plan: starter          # free tier sleeps after inactivity; starter stays warm
+    buildCommand: pip install -r requirements.txt
+    # Render sets $PORT; one worker only — rooms live in memory, so a second
+    # worker would put players in a different copy of the room than the host.
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT --workers 1
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+      - key: PUBLIC_URL
+        # set this to your domain once DNS is pointed at the service,
+        # e.g. https://mergeconflictatmach2.study  (no trailing slash)
+        sync: false

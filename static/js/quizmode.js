@@ -41,6 +41,7 @@ function quizShowQuestion(m) {
   QUIZ.locked = false;
   QUIZ.burned = [];
   clearTimeout(QUIZ.lockTimer);
+  clearTimeout(QUIZ.blindTimer);
 
   $('qText').textContent = m.q;
 
@@ -161,6 +162,29 @@ function quizAudit(m) {
   QUIZ.auditsLeft = m.left;
   $('qBtnAudit').querySelector('.c-sub').textContent = m.left + ' LEFT';
   haptic(50);
+}
+
+/** Blind Spot: the answers stay hidden for a moment. */
+function quizBlindSpot(ms) {
+  const cells = document.querySelectorAll('#qGrid .q-opt');
+  cells.forEach(el => {
+    el.dataset.hidden = '1';
+    const lab = el.querySelector('.q-label');
+    lab.dataset.text = lab.textContent;
+    lab.textContent = '— — —';
+    el.classList.add('dimmed');
+  });
+  clearTimeout(QUIZ.blindTimer);
+  QUIZ.blindTimer = setTimeout(() => {
+    document.querySelectorAll('#qGrid .q-opt').forEach(el => {
+      if (el.dataset.hidden !== '1') return;
+      el.dataset.hidden = '';
+      const lab = el.querySelector('.q-label');
+      if (lab.dataset.text) lab.textContent = lab.dataset.text;
+      el.classList.remove('dimmed');
+    });
+    haptic(12);
+  }, ms);
 }
 
 /** 50/50 power: burn two wrong options. Server-free — purely visual aid is
