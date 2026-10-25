@@ -19,6 +19,9 @@ const FIGHT = {
   endsAt: 0,
   sendTimer: null,
   loadout: null,
+  arena: [1600, 900],
+  blips: [],
+  me: null,
 };
 
 /* ------------------------------------------------------------ hangar */
@@ -207,7 +210,10 @@ function buildTradePanel() {
 /* ------------------------------------------------------------ flight */
 function startFight() {
   FIGHT.on = true;
+  FIGHT.steer = 0;
+  FIGHT.throttle = 0.5;
   FIGHT.alive = true;
+  if (!loopRunning) startLoop();
   show('s-fight');
   wireFightControls();
 
@@ -223,7 +229,11 @@ function startFight() {
 function stopFight() {
   FIGHT.on = false;
   FIGHT.firing = false;
+  FIGHT.me = null;
+  FIGHT.blips = [];
   clearInterval(FIGHT.sendTimer);
+  const contacts = $('hzContacts');
+  if (contacts) contacts.innerHTML = '';
 }
 
 /** Read bank and pitch off the sensors; called from the main loop. */
@@ -304,10 +314,90 @@ function drawMinimap(blips, arena) {
   });
 }
 
+function wrapDelta(d, size) {
+  if (d > size / 2) return d - size;
+  if (d < -size / 2) return d + size;
+  return d;
+}
+
+function angleTo(a, b) {
+  return ((b - a + 540) % 360) - 180;
+}
+
+function contactPlaneSVG() {
+  return `<svg viewBox="0 0 44 28" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+    <rect x="20" y="2" width="4" height="24" fill="#ff9ea1"/>
+    <rect x="9" y="12" width="26" height="4" fill="#ff6b70"/>
+    <rect x="4" y="10" width="6" height="8" fill="#ff6b70"/>
+    <rect x="34" y="10" width="6" height="8" fill="#ff6b70"/>
+    <rect x="17" y="0" width="10" height="5" fill="#ffd0d3"/>
+  </svg>`;
+}
+
+function contactArrowSVG(dir) {
+  if (dir === 'left') {
+    return `<svg viewBox="0 0 34 22" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+      <polygon points="4,11 18,2 18,7 30,7 30,15 18,15 18,20" fill="#ff6b70"/>
+      <polygon points="2,11 16,4 16,8 29,8 29,14 16,14 16,18" fill="#ff9ea1" opacity=".55"/>
+    </svg>`;
+  }
+  return `<svg viewBox="0 0 34 22" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+    <polygon points="30,11 16,2 16,7 4,7 4,15 16,15 16,20" fill="#ff6b70"/>
+    <polygon points="32,11 18,4 18,8 5,8 5,14 18,14 18,18" fill="#ff9ea1" opacity=".55"/>
+  </svg>`;
+}
+
+function drawContacts(me, blips, arena) {
+  const box = $('hzContacts');
+  if (!box) return;
+  if (!me || !blips || !blips.length) { box.innerHTML = ''; return; }
+
+  const AW = arena ? arena[0] : 1600;
+  const AH = arena ? arena[1] : 900;
+  const range = Math.min(900, Math.hypot(AW, AH) * 0.55);
+  const FOV = 60;
+  let leftCount = 0, rightCount = 0, visCount = 0;
+
+  const enemies = blips.filter(b => b.p !== STATE.pid && b.a)
+    .map(b => {
+      const ex = b.x * 16;
+      const ey = b.y * 16;
+      const dx = wrapDelta(ex - me.x, AW);
+      const dy = wrapDelta(ey - me.y, AH);
+      const dist = Math.hypot(dx, dy);
+      const bearing = Math.atan2(dy, dx) * 180 / Math.PI;
+      const rel = angleTo(me.heading, bearing);
+      return { pid: b.p, dist, rel };
+    })
+    .sort((a, b) => a.dist - b.dist);
+
+  box.innerHTML = enemies.map(e => {
+    const near = Math.max(0, Math.min(1, 1 - e.dist / range));
+    const size = Math.round(18 + near * 24);
+    if (Math.abs(e.rel) <= FOV) {
+      const lane = visCount++ % 3;
+      const x = 50 + (e.rel / FOV) * 42;
+      const top = 18 + (1 - (e.dist / range)) * 25 + lane * 9;
+      const h = Math.round(size * 0.64);
+      return `<div class="hz-contact plane" style="left:calc(${x}% - ${size / 2}px);top:${top}%;width:${size}px;height:${h}px">${contactPlaneSVG()}</div>`;
+    }
+
+    const side = e.rel < 0 ? 'left' : 'right';
+    const lane = side === 'left' ? leftCount++ : rightCount++;
+    const top = 14 + lane * 18 + near * 18;
+    const h = Math.round(size * 0.7);
+    return `<div class="hz-contact arrow ${side}" style="${side}:6px;top:${top}%;width:${size}px;height:${h}px">${contactArrowSVG(side)}</div>`;
+  }).join('');
+}
+
 /** Server tells us how our own jet is doing. */
 function fightMe(m) {
   const me = m.me;
-  drawMinimap(m.blips, m.arena);
+  FIGHT.me = me;
+  FIGHT.blips = m.blips || [];
+  FIGHT.arena = m.arena || FIGHT.arena;
+  drawMinimap(FIGHT.blips, FIGHT.arena);
+  drawContacts(me, FIGHT.blips, FIGHT.arena);
   FIGHT.missiles = me.missiles;
   FIGHT.endsAt = performance.now() + m.left * 1000;
 
@@ -328,6 +418,8 @@ function fightMe(m) {
                     missiles: 'MISSILE RACK DEAD', wings: 'CONTROL SURFACE TORN',
                     armor: 'ARMOUR SHEARED' };
     $('fStatus').textContent = me.failed.map(s => names[s] || s).join(' · ');
+  } else {
+    $('fStatus').textContent = '';
   }
 
   if (me.alive !== FIGHT.alive) {

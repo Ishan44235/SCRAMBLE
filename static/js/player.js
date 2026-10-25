@@ -212,7 +212,7 @@ function handle(m) {
     case 'round_end':
       toast(`ROUND ${m.round} OVER`, 'warn');
       $('finalWarn').classList.remove('on');
-      $('hudClock').style.color = '';
+      if ($('hudClock')) $('hudClock').style.color = '';
       break;
 
     case 'power':
@@ -262,6 +262,15 @@ function handle(m) {
       break;
 
     case 'to_lobby':
+      if (MG.raf) cancelAnimationFrame(MG.raf);
+      MG.active = null; MG.done = true;
+      stopFight();
+      clearTimeout(FIGHT.popTimer);
+      clearTimeout(QUIZ.lockTimer);
+      clearTimeout(QUIZ.blindTimer);
+      QUIZ.inst = null; QUIZ.locked = true;
+      STATE.aiming = false;
+      breakAimOnLobby();
       playerExitPending = false;
       cleanupMatchNavigation();
       STATE.lobbyOnly = false;
@@ -316,7 +325,7 @@ function paintRole(m) {
 
   if (m.role !== 'detective') {
     document.querySelector('.controls').style.gridTemplateColumns = '1fr 1fr';
-    $('btnPass').style.gridColumn = 'span 2';
+    if ($('btnPass')) $('btnPass').style.gridColumn = 'span 2';
   }
   show('s-role');
   haptic(60);
@@ -345,6 +354,7 @@ function startLoop() {
 }
 
 function loop() {
+  if (STATE.phase === 'fight' && FIGHT.on) fightTick();
   const now = performance.now();
   const dt = Math.min(60, now - lastT);
   lastT = now;
@@ -425,6 +435,7 @@ function wireMotionWarn() {
 /* ---------------------------------------------------------- quiz input */
 function wireQuizControls() {
   const tap = (el, fn) => {
+    if (!el) return;
     el.addEventListener('touchstart', e => { e.preventDefault(); fn(); }, { passive: false });
     el.addEventListener('click', e => { e.preventDefault(); fn(); });
   };
@@ -440,27 +451,23 @@ function wireQuizControls() {
 
   wireMotionWarn();
 
-  // Motion for quiz mode. Aiming is read continuously in quizTick(); these
-  // are the discrete gestures.
-  motion.on.move = null;                     // tilt aims, it does not step
+  // Quiz answers are taps only. No twisting, tilting or shaking selects answers.
+  motion.on.move = null;
   motion.on.drop = null;
-  motion.on.rotate = () => {                 // twist = lock in your answer
-    if (STATE.phase === 'round' && !STATE.aiming) quizLockIn();
-  };
-  motion.on.flick = null;   // passing is left/right around the circle now
-  // Shake hard = PANIC PASS: dumps the question on a random rival instantly.
-  // Faster than aiming, but you don't get to choose who catches it.
-  motion.on.shake = () => {
-    if (STATE.phase !== 'round' || STATE.aiming) return;
-    if (QUIZ.inst === null || QUIZ.locked) return;
-    if (STATE.aimMode === 'pass' && STATE.noPass) {
-    toast('LOCKED BAY — CAN\'T PASS', 'bad'); return;
-  }
-    const dir = Math.random() < 0.5 ? 'left' : 'right';
+  motion.on.rotate = null;
+  motion.on.flick = null;
+  motion.on.shake = null;
+  motion.on.lateral = dir => {
+    if (STATE.phase !== 'round' || STATE.aiming || !QUIZ.inst || QUIZ.locked || MG.active) return;
+    if (STATE.noPass) { toast('LOCKED BAY — CAN\'T PASS', 'bad'); return; }
+    const seat = myRingSeat();
+    if (!seat || !seat[dir]) return;
     if (STATE.mustPass > 0) STATE.mustPass--;
+    // Lock input until the server sends the next question.
+    QUIZ.locked = true;
     send({ t: 'pass', dir });
-    toast('PANIC PASS ' + dir.toUpperCase(), 'warn');
-    haptic([25, 30, 25]);
+    toast('PASSED ' + dir.toUpperCase(), 'good');
+    haptic(35);
   };
 }
 
@@ -994,3 +1001,5 @@ if (playerLogo) {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); playerReturnLobby(); }
   };
 }
+
+function breakAimOnLobby() { const el = document.getElementById('aim'); if (el) el.classList.remove('on'); }

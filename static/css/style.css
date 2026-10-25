@@ -584,6 +584,20 @@ input::placeholder { color: var(--text-mute); letter-spacing: .04em; }
 }
 .hz-label.hz-l { left: 10px; }
 .hz-label.hz-r { right: 10px; }
+.hz-contacts {
+  position: absolute; inset: 0; pointer-events: none; overflow: hidden;
+}
+.hz-contact {
+  position: absolute; transform-origin: 50% 50%;
+  filter: drop-shadow(0 0 6px rgba(229,72,77,.28));
+}
+.hz-contact svg { width: 100%; height: 100%; display: block; }
+.hz-contact.arrow {
+  animation: blink 1s steps(1) infinite;
+}
+.hz-contact.plane {
+  filter: drop-shadow(0 0 8px rgba(229,72,77,.34));
+}
 
 /* throttle */
 .throttle {

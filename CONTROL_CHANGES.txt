@@ -1,0 +1,7 @@
+SCRAMBLE controls update
+- UI layout/CSS/art are unchanged; only existing instructional text updated.
+- Quiz answers: tap only. Tilt/twist/shake cannot submit answers.
+- Pass a question: slide upright phone left or right (horizontal acceleration), or tap existing neighbor controls.
+- Dogfight: live fightTick() is now called every animation frame; bank angle drives server steering messages at 20 Hz.
+- Requires phone motion permission and HTTPS (START-TUNNEL).
+- Physical phone validation is still required; sideways acceleration sign may depend on device orientation.

@@ -47,10 +47,10 @@
   <h2>Motion access</h2>
   <p>This game is played by moving your phone. We need permission to read its motion sensors.</p>
   <ul>
-    <li><span class="dot"></span><div><b style="color:var(--text)">Tilt</b> left and right to move the falling piece.</div></li>
-    <li><span class="dot"></span><div><b style="color:var(--text)">Twist</b> the phone to rotate it.</div></li>
-    <li><span class="dot"></span><div><b style="color:var(--text)">Flick down</b> to slam the piece into place.</div></li>
-    <li><span class="dot"></span><div><b style="color:var(--text)">Flick forward</b> at someone to pass the piece to them.</div></li>
+    <li><span class="dot"></span><div><b style="color:var(--text)">Tap</b> an answer to submit it. No twist needed.</div></li>
+    <li><span class="dot"></span><div><b style="color:var(--text)">Slide</b> the upright phone left or right to pass a question to that neighbor.</div></li>
+    <li><span class="dot"></span><div><b style="color:var(--text)">Bank</b> the upright phone left or right to steer in dogfights.</div></li>
+    <li><span class="dot"></span><div><b style="color:var(--text)">Use the on-screen pass controls</b> if motion is unavailable.</div></li>
   </ul>
   <p class="fine">
     Readings stay on your phone and in this game session. Nothing is recorded,
@@ -162,10 +162,10 @@
   <div class="gest-group">
     <div class="gest-head">IN THE QUIZ</div>
     <ul>
-      <li><span class="dot"></span><div><b>Tilt</b> toward one of the four answers to aim at it.</div></li>
-      <li><span class="dot"></span><div><b>Twist</b> the phone like a steering wheel to lock your answer in.</div></li>
-      <li><span class="dot"></span><div><b>Flick forward</b> to pass a question you don't know to someone else.</div></li>
-      <li><span class="dot"></span><div><b>Shake hard</b> to panic-pass it to a random rival.</div></li>
+      <li><span class="dot"></span><div><b>Tap</b> one of the four answers. Tilting does not select answers.</div></li>
+      <li><span class="dot"></span><div><b>Slide left/right</b> while holding the phone upright to pass to your left/right neighbor.</div></li>
+      <li><span class="dot"></span><div><b>Or tap</b> the left/right neighbor to pass.</div></li>
+      <li><span class="dot"></span><div><b>No twisting or shaking</b> is needed for quiz answers or passing.</div></li>
     </ul>
     <div class="gest-head">WHEN THINGS GO WRONG</div>
     <ul>
@@ -238,7 +238,7 @@
       <div class="q-opt" data-i="3"><span class="q-key">D</span><span class="q-label"></span></div>
     </div>
 
-    <div class="q-hint" id="qHint">TILT TO AIM · TWIST TO LOCK IN</div>
+    <div class="q-hint" id="qHint">TAP ANSWER · SLIDE PHONE LEFT/RIGHT TO PASS</div>
     <div class="q-flash" id="qFlash"></div>
     <div class="audit-card" id="auditCard">
       <div class="a-k">PROCTOR AUDIT</div>
@@ -304,6 +304,7 @@
       </div>
       <div class="hz-label hz-l">◀ BANK</div>
       <div class="hz-label hz-r">BANK ▶</div>
+      <div class="hz-contacts" id="hzContacts" aria-hidden="true"></div>
     </div>
 
     <div class="throttle">

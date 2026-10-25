@@ -1,0 +1,15 @@
+SCRAMBLE: phone controls + host arena repair
+
+Changes:
+- Sideways slide passes now reverse the incorrect acceleration sign (phone portrait, screen facing player).
+- Ring challenge pitch reversed so up/down follows the intended cockpit direction.
+- Flight tilt controls update every animation frame during dogfight, rather than only once when the loop starts.
+- Host arena renderer restored. Draws every live jet from server fight snapshots plus bullets/missiles, player names, and health/kills roster.
+- Original retro-arcade layout and styling preserved, with the existing cockpit enemy arrows unchanged.
+- START-TUNNEL.bat remains included for local HTTPS phone testing.
+
+Checks executed:
+- node --check: player.js, motion.js, minigames.js, dogfightclient.js and host inline JS: passed.
+- python -m unittest test_nav_mechanics -v: 3 passed.
+
+Not verified: real iOS/Android motion-sensor polarity and sensitivity, or real browser host rendering. Use START-TUNNEL.bat to test with actual phones.

@@ -74,18 +74,8 @@ function quizTick() {
   fill.className = 'q-timer-fill' +
     (frac < 0.22 ? ' crit' : frac < 0.5 ? ' warn' : '');
 
-  // tilt aiming
-  if (motion.live) {
-    const q = tiltToQuadrant(motion.tiltRel, motion.pitchRel);
-    if (q !== QUIZ.aim) {
-      QUIZ.aim = q;
-      cancelLock();
-      document.querySelectorAll('#qGrid .q-opt').forEach((el, i) => {
-        el.classList.toggle('aim', i === q && !QUIZ.burned.includes(i));
-      });
-      if (q >= 0) haptic(8);
-    }
-  }
+  // Quiz input is tap-only. Motion cannot highlight or lock an answer.
+
 }
 
 function cancelLock() {
@@ -104,7 +94,7 @@ function quizLockIn(idx) {
     haptic([20, 40, 20]);
     return;
   }
-  if (idx === undefined) idx = QUIZ.aim;
+  if (!Number.isInteger(idx)) return;
   if (idx < 0 || QUIZ.burned.includes(idx)) return;
 
   QUIZ.locked = true;

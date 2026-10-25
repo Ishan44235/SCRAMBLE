@@ -1,11 +1,11 @@
 @echo off
 setlocal enabledelayedexpansion
-title TRENCHCOAT - Game Server (HTTPS tunnel)
+title SCRAMBLE - Game Server (HTTPS tunnel)
 cd /d "%~dp0"
 
 echo.
 echo   ==========================================
-echo     T R E N C H C O A T   (public HTTPS)
+echo     S C R A M B L E   (public HTTPS)
 echo   ==========================================
 echo.
 echo   Use this one for real phones, especially iPhones.
@@ -35,16 +35,24 @@ if not exist ".venv\Scripts\python.exe" (
   )
 )
 
-REM ---- check cloudflared ---------------------------------------------
+REM ---- locate or install cloudflared -------------------------------
 where cloudflared >nul 2>&1
 if errorlevel 1 (
-  echo   cloudflared not found. Installing via winget...
-  winget install --id Cloudflare.cloudflared --accept-source-agreements --accept-package-agreements
-  echo.
-  echo   If that failed, install it manually, then run this again:
-  echo     https://github.com/cloudflare/cloudflared/releases
-  echo.
+  if not exist "cloudflared.exe" (
+    echo   cloudflared not found. Trying winget installation...
+    where winget >nul 2>&1
+    if not errorlevel 1 winget install --id Cloudflare.cloudflared --exact --accept-source-agreements --accept-package-agreements
+    echo.
+    echo   If not installed, download cloudflared.exe from:
+    echo   https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/
+    echo   and place cloudflared.exe beside this START-TUNNEL.bat file.
+    echo.
+  )
 )
 
+REM ---- launch with HTTPS tunnel --------------------------------------
 ".venv\Scripts\python.exe" launch.py --tunnel
-if errorlevel 1 pause
+if errorlevel 1 (
+  echo   Tunnel startup failed. See the message above.
+  pause
+)

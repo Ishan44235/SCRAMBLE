@@ -181,6 +181,11 @@ def main():
     public = None
     if args.tunnel:
         public = start_tunnel()
+        if not public:
+            say("  [X] HTTPS tunnel unavailable. Install cloudflared and retry.")
+            say("      You can still test on this computer with START.bat.")
+            pause()
+            sys.exit(1)
     if public:
         os.environ["PUBLIC_URL"] = public
 
@@ -193,7 +198,7 @@ def main():
     rule()
     say(f"  HOST DISPLAY  ->  {host_url}")
     say(f"  PHONES JOIN   ->  {join_url}")
-    say(f"  ROOM CODE     ->  {server.GAME.code}")
+    say("  ROOM CODE     ->  Created when you click HOST GAME")
     rule()
     if join_url.startswith("https://"):
         say("  HTTPS tunnel active — motion works on iPhones.")
@@ -202,7 +207,7 @@ def main():
         say("  Phones must be on the SAME Wi-Fi, and iPhones will NOT")
         say("  have motion controls. Run START-TUNNEL for that.")
     say("")
-    say("  Open the link, hit HOST GAME, then scan the QR.")
+    say("  Open the local link, click HOST GAME, then scan the QR.")
     say("  Close this window to stop the game.")
     rule()
 

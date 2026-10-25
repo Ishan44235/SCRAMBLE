@@ -59,7 +59,7 @@ function mgFinish(success) {
 function mgStick() {
   if (!motion.live) return { x: 0, y: 0 };
   let x = motion.tiltRel / 26;
-  let y = motion.pitchRel / 26;
+  let y = -motion.pitchRel / 26;
   if (STATE.inverted) { x = -x; y = -y; }
   return {
     x: Math.max(-1, Math.min(1, x)),

@@ -380,6 +380,75 @@ function handle(m) {
   }
 }
 
+// Authoritative arena frames from the multiplayer server.
+const ARENA = { frame: null, jets: [], w: 1600, h: 900, sprites: {} };
+function arenaSetup(m) {
+  ARENA.jets = m.jets || [];
+  ARENA.sprites = {};
+  ARENA.w = (m.arena || [1600, 900])[0];
+  ARENA.h = (m.arena || [1600, 900])[1];
+  ARENA.frame = null;
+  $('arenaCountdown').textContent = 'PREPARE FOR DOGFIGHT';
+  $('arenaBoard').innerHTML = '';
+}
+function arenaFrame(m) {
+  ARENA.frame = m;
+  if (m.running) $('arenaCountdown').textContent = '';
+  $('fightClock').textContent = fmt(m.left || 0);
+  const roster = new Map(ARENA.jets.map(j => [j.pid, j]));
+  $('arenaBoard').innerHTML = (m.jets || []).map(j => {
+    const name = roster.get(j.pid)?.name || j.name || 'PILOT';
+    return `<div class="arena-pilot"><b>${name}</b> · ${Math.round(j.hp)}/${Math.round(j.maxHp)} HP · ${j.kills} KILLS${j.alive ? '' : ' · RESPAWNING'}</div>`;
+  }).join('');
+  for (const e of (m.events || [])) {
+    if (e.kind === 'kill') arenaFeed(`${e.killer || 'UNKNOWN'} DOWNED ${e.victim}`, 'kill');
+  }
+}
+function arenaFeed(html, kind = '') {
+  const el = document.createElement('div');
+  el.className = 'feed-item' + (kind ? ' ' + kind : '');
+  el.innerHTML = html;
+  $('arenaFeed').prepend(el);
+  while ($('arenaFeed').children.length > 5) $('arenaFeed').lastChild.remove();
+}
+function drawArena() {
+  const cv = $('arena');
+  const rect = cv.getBoundingClientRect();
+  const w = rect.width, h = rect.height;
+  if (!w || !h) return;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  }
+  const c = cv.getContext('2d');
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.clearRect(0, 0, w, h);
+  c.fillStyle = '#080c16'; c.fillRect(0, 0, w, h);
+  c.strokeStyle = '#1c2c40'; c.lineWidth = 1;
+  for (let x = 0; x <= w; x += 50) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke(); }
+  for (let y = 0; y <= h; y += 50) { c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke(); }
+  if (!ARENA.frame) return;
+  const sx = w / ARENA.w, sy = h / ARENA.h;
+  for (const b of ARENA.frame.bullets || []) {
+    c.fillStyle = '#ffdc7a'; c.fillRect(b.x * sx - 2, b.y * sy - 2, 4, 4);
+  }
+  for (const m of ARENA.frame.missiles || []) {
+    c.fillStyle = '#f05f64'; c.fillRect(m.x * sx - 3, m.y * sy - 3, 6, 6);
+  }
+  const roster = new Map(ARENA.jets.map(j => [j.pid, j]));
+  for (const j of ARENA.frame.jets || []) {
+    if (!j.alive) continue;
+    c.save(); c.translate(j.x * sx, j.y * sy);
+    c.rotate((j.heading + 90) * Math.PI / 180);
+    c.fillStyle = '#aab9d3';
+    c.beginPath(); c.moveTo(0, -15); c.lineTo(-7, 10); c.lineTo(0, 5); c.lineTo(7, 10); c.closePath(); c.fill();
+    c.fillStyle = '#3e8fff'; c.fillRect(-17, 2, 34, 4);
+    c.restore();
+    c.textAlign = 'center'; c.font = 'bold 12px monospace'; c.fillStyle = '#eaf0ff';
+    c.fillText(roster.get(j.pid)?.name || j.name || 'PILOT', j.x * sx, j.y * sy - 22);
+  }
+}
+
 const CHEAT_TARGET = 0.60;
 function paintAccuracy(acc) {
   if (acc === null || acc === undefined) return;

@@ -1,11 +1,11 @@
 @echo off
 setlocal enabledelayedexpansion
-title TRENCHCOAT - Game Server
+title SCRAMBLE - Game Server
 cd /d "%~dp0"
 
 echo.
 echo   ==========================================
-echo     T R E N C H C O A T
+echo     S C R A M B L E
 echo   ==========================================
 echo.
 

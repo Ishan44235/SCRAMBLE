@@ -21,6 +21,9 @@ class Motion {
     this._lastFlickAt = 0;
     this._lastShakeAt = 0;
     this._shakeEnergy = 0;
+    this._lastLateralAt = 0;
+    this._lateralArmed = true;
+    this._lateralGravity = null;
 
     this.on = {
       move: null,      // (dir) => {}   dir = -1 | +1
@@ -191,6 +194,27 @@ class Motion {
       };
     }
     this.lastEventAt = now;
+
+    // Phone held upright, screen facing player: slide phone sideways without
+    // rotating it. Remove gravity (including when acceleration is unavailable).
+    const raw = e.accelerationIncludingGravity;
+    if (raw && raw.x != null) {
+      if (this._lateralGravity === null) this._lateralGravity = raw.x;
+      this._lateralGravity = this._lateralGravity * 0.92 + raw.x * 0.08;
+    }
+    const lateralX = e.acceleration && e.acceleration.x != null
+      ? e.acceleration.x : (raw && raw.x != null ? raw.x - this._lateralGravity : null);
+    // Tilt alone must never pass: compare measured roll with the calibrated
+    // neutral angle and reject large changes in angle during the gesture.
+    if (lateralX != null) {
+      if (Math.abs(lateralX) < 1.7) this._lateralArmed = true;
+      if (this._lateralArmed && Math.abs(lateralX) > 5.5 &&
+          Math.abs(this.tiltRel) < 24 && now - this._lastLateralAt > 850) {
+        this._lateralArmed = false;
+        this._lastLateralAt = now;
+        if (this.on.lateral) this.on.lateral(lateralX > 0 ? 'left' : 'right');
+      }
+    }
 
     // --- TWIST TO ROTATE -------------------------------------------------
     // rotationRate.alpha is spin about the screen-normal axis.
