@@ -1,0 +1,12 @@
+Grok + Gemini, with lower API usage
+
+- Host-selectable Grok/Gemini provider in Trivia and Study modes.
+- One generation API call for any selected question count (10-100).
+- Scanned PDFs: one multimodal request with compressed slide images, no separate OCR/notes model call.
+- Text PDFs: extract text locally and send up to 65K characters.
+- Concise output (only question, four options and zero-based answer index); no explanations or repeated validation/model retries.
+- Server keeps a minimal local schema check before accepting the new deck and preserves previous deck on failures.
+- Separate XAI_API_KEY and GEMINI_API_KEY in .env; keys stay server-side.
+- Host progress displays a processing message until the single response returns.
+
+No real API calls were made during tests; provider response length and model availability may vary.

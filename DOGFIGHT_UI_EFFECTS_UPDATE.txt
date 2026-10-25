@@ -1,0 +1,11 @@
+Latest update
+
+- Added 3 extra seconds to the role reveal screen.
+- Made cockpit enemy arrows and plane markers scale more strongly with distance.
+- Moved the minimap into the cockpit horizon as an easier-to-read overlay.
+- Added player-side dogfight effects:
+  - gun tracer flashes while firing
+  - missile launch animation and warning text
+  - hit flash / explosion effects when the player is hit
+  - shot down warning banner
+- Kept the retro arcade visual theme.

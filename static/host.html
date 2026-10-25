@@ -16,6 +16,120 @@ body.urgent::after {
   box-shadow: inset 0 0 90px 10px rgba(229, 72, 77, .3);
   animation: final-pulse 1s ease-in-out infinite;
 }
+
+/* Welcoming, quieter Grok setup panel. */
+.ai-bank-panel { margin-top:20px; padding:22px; max-width:620px;
+  border:1px solid rgba(143,171,214,.25); border-radius:20px;
+  background:linear-gradient(155deg,rgba(37,52,77,.94),rgba(19,28,45,.97));
+  box-shadow:0 16px 34px rgba(0,0,0,.22),inset 0 1px 0 rgba(232,242,255,.08); }
+.ai-bank-panel .eyebrow { margin-bottom:10px; color:#acc9ee; letter-spacing:.08em; }
+.ai-tabs { display:flex;gap:10px;margin:16px 0 18px;padding:5px;
+  background:rgba(8,16,29,.44);border:1px solid rgba(145,174,210,.15);border-radius:16px; }
+.ai-tab { flex:1;cursor:pointer;background:transparent;color:#b6c4d9;
+  border:1px solid transparent;border-radius:12px;padding:13px 10px;
+  font-family:var(--font);font-weight:800;letter-spacing:.06em;
+  transition:background .15s,color .15s,box-shadow .15s; }
+.ai-tab.active { color:#fff;border-color:rgba(168,204,255,.34);
+  background:linear-gradient(155deg,#497eaf,#306394);box-shadow:0 4px 12px rgba(12,39,73,.35); }
+.ai-tab:hover:not(:disabled):not(.active) { background:rgba(106,156,212,.14);color:#eef6ff; }
+.ai-tab:focus-visible { outline:2px solid #b7d8ff;outline-offset:2px; }
+.ai-row {display:flex;flex-direction:column;gap:8px;margin:13px 0;text-align:left}
+.ai-row label {font-size:11px;color:#c3d3e9;font-weight:750;letter-spacing:.06em}
+.ai-row input,.ai-row select {width:100%;background:rgba(10,19,34,.73);
+  border:1px solid rgba(143,174,212,.28);color:#f0f6ff;padding:13px 14px;
+  border-radius:12px;font:inherit;min-width:0;outline:none; }
+.ai-row input:focus,.ai-row select:focus {border-color:#8cc3ff;box-shadow:0 0 0 3px rgba(83,155,238,.14);}
+.ai-row input[type=file] {font-size:12px}
+#aiGenerate {margin-top:16px;width:100%;padding:16px;border-radius:13px;}
+#aiGenerate:disabled {opacity:.5;cursor:default}
+.ai-bank-status {font:700 11px var(--mono);color:#a3e6bf;margin-top:14px;overflow-wrap:anywhere;line-height:1.5}
+.ai-bank-note {font-size:12px;color:#aebed2;margin-top:8px;line-height:1.5}
+.ai-progress {margin:10px 0 6px;}
+.ai-progress-track {height:9px;border-radius:20px;background:rgba(40,65,91,.7);overflow:hidden;border:1px solid rgba(145,174,210,.2)}
+.ai-progress-fill {height:100%;width:0;background:linear-gradient(90deg,#5198cb,#a1dcbf);transition:width .25s ease;border-radius:20px}
+.ai-progress-caption {display:flex;justify-content:space-between;gap:12px;margin-top:6px;color:#bdcee3;font:700 10px var(--mono)}
+
+/* Roomier lobby cards using the same visual language as the QR panel. */
+#viewLobby.host-body {grid-template-columns:minmax(240px,.86fr) minmax(355px,1.5fr) minmax(272px,1fr);gap:22px;margin-top:25px;align-items:start;}
+#viewLobby .qr-panel,#viewLobby .ai-bank-panel,#viewLobby #settingsPanel,#viewLobby .host-leaderboard {
+  background:linear-gradient(150deg,rgba(32,43,63,.96),rgba(15,23,37,.97));
+  border:1px solid rgba(139,173,211,.24);border-radius:20px;
+  box-shadow:0 15px 35px rgba(0,0,0,.23),inset 0 1px 0 rgba(232,242,255,.08);
+}
+#viewLobby .qr-panel {padding:26px 20px;min-height:360px;}
+#viewLobby .qr-panel img {width:min(100%,215px);height:auto;aspect-ratio:1;margin:18px auto 0!important;filter:drop-shadow(0 5px 14px rgba(0,0,0,.22));}
+#viewLobby .qr-panel .qr-code {font-size:30px;margin-top:15px;}
+#viewLobby .qr-panel .qr-url {font-size:12px;margin-top:11px;overflow-wrap:anywhere;line-height:1.5;}
+#viewLobby .roster {gap:0;min-width:0;}
+#viewLobby .roster-head {margin:0 0 13px;padding:7px 4px 5px;}
+#viewLobby .roster-head .rh-n {font-size:34px;}
+#viewLobby .roster-head .rh-k {font-size:10px;letter-spacing:.12em;}
+#viewLobby .roster-grid {grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:9px;max-height:160px;overflow:auto;}
+#viewLobby .roster-card {padding:10px 11px;gap:9px;border-radius:12px;}
+#viewLobby .roster-card .rc-name {font-size:12px;}
+#viewLobby .ai-bank-panel {max-width:none;margin-top:18px;padding:22px;position:relative;overflow:hidden;}
+#viewLobby .ai-bank-panel .eyebrow {font-size:10px;position:relative;z-index:1;}
+#viewLobby .ai-tabs {margin:18px 0 18px;padding:5px;gap:7px;}
+#viewLobby .ai-tab {padding:12px 9px;font-size:12px;}
+#viewLobby .ai-row {margin:14px 0;gap:8px;}
+#viewLobby .ai-row label {font-size:11px;}
+#viewLobby .ai-row input,#viewLobby .ai-row select {padding:13px 13px;min-height:46px;}
+#viewLobby #aiGenerate {padding:15px;margin-top:14px;}
+#viewLobby .ai-bank-status {margin-top:16px;font-size:11px;}
+#viewLobby .ai-bank-note {font-size:11px;margin-top:11px;}
+#viewLobby .host-leaderboard {padding:18px;margin:16px 0 0;}
+#viewLobby .lobby-ranks {max-height:175px;gap:6px;}
+#viewLobby .lobby-rank {padding:8px 10px;}
+#viewLobby .lobby-board-label {margin-bottom:12px;}
+#viewLobby .lobby-settings-side {min-width:0;}
+#viewLobby #setToggle {display:none;}
+#viewLobby #settingsPanel {display:block!important;padding:23px 20px;margin:0;}
+#viewLobby #settingsPanel::before {content:'MATCH SETTINGS';display:block;font:800 11px var(--font);letter-spacing:.11em;color:#bcd9ff;margin-bottom:19px;}
+#viewLobby .set-grid {grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;}
+#viewLobby .set {padding:13px 7px;gap:9px;border:1px solid rgba(143,171,214,.17);border-radius:13px;background:rgba(7,16,31,.42);min-height:107px;}
+#viewLobby .set-k {font-family:var(--font);font-size:10px;letter-spacing:.03em;line-height:1.3;color:#c6d7ed;}
+#viewLobby .stepper {gap:7px;}
+#viewLobby .st-btn {width:31px;height:31px;font-size:16px;border-radius:9px;}
+#viewLobby .st-v {font-family:var(--mono);font-size:14px;min-width:31px;}
+#viewLobby .set-u {font-size:9px;color:#8fa3bf;}
+#viewLobby .set-foot {margin-top:16px;padding-top:14px;gap:9px;flex-wrap:wrap;font-size:10px;}
+/* Gentle pixel clouds and a tiny flight trail, without scanlines. */
+.ai-pixel-sky {position:absolute;right:12px;top:12px;width:91px;height:38px;opacity:.65;pointer-events:none;animation:aiFloat 6s ease-in-out infinite;image-rendering:pixelated;}
+.qr-pixel-sky {width:116px;height:42px;display:block;margin:0 auto 8px;opacity:.78;image-rendering:pixelated;animation:aiFloat 7s ease-in-out infinite;}
+@keyframes aiFloat {0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+@media(prefers-reduced-motion:reduce){.ai-pixel-sky,.qr-pixel-sky{animation:none}}
+@media(min-width:1350px){.host{padding:23px 30px;}.host-foot{margin-top:20px;}}
+@media(max-width:1250px){#viewLobby.host-body{grid-template-columns:minmax(230px,.8fr) minmax(340px,1.3fr);gap:19px;}#viewLobby .lobby-settings-side{grid-column:1/-1;}#viewLobby .set-grid{grid-template-columns:repeat(4,minmax(0,1fr));}}
+@media(max-width:760px){#viewLobby.host-body{grid-template-columns:1fr;gap:18px;}#viewLobby .lobby-settings-side{grid-column:auto;}#viewLobby .set-grid{grid-template-columns:repeat(2,minmax(0,1fr));}#viewLobby .qr-panel{min-height:0;}#viewLobby .ai-bank-panel{padding:20px;}}
+
+
+/* Shared QR-card design: clean, soft, evenly-spaced host controls. */
+#viewLobby .ai-bank-panel {
+  padding:25px 24px 24px;
+  background:linear-gradient(150deg,rgba(32,43,63,.96),rgba(15,23,37,.97));
+  border:1px solid rgba(139,173,211,.24);
+  border-radius:20px;
+  box-shadow:0 15px 35px rgba(0,0,0,.23),inset 0 1px 0 rgba(232,242,255,.08);
+}
+#viewLobby .ai-bank-panel .eyebrow {font-family:var(--arcade);letter-spacing:.07em;color:var(--text-dim);padding:4px 0 7px;}
+#viewLobby .ai-tabs {display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:15px 0 22px;padding:6px;border-radius:15px;background:rgba(9,20,36,.55);}
+#viewLobby .ai-tab {width:100%;padding:13px 8px;border-radius:11px;letter-spacing:.04em;font-weight:800;}
+#viewLobby .ai-tab.active {background:linear-gradient(140deg,#668fbc,#3e6e9d);color:#fff;box-shadow:0 4px 12px rgba(8,25,49,.26);}
+#viewLobby .ai-row {margin:0 0 16px;gap:8px;}
+#viewLobby .ai-row label {font:750 10px var(--font);letter-spacing:.08em;color:#bdd3ec;}
+#viewLobby .ai-row input,#viewLobby .ai-row select {
+  border-radius:11px;min-height:45px;padding:11px 13px;
+  border:1px solid rgba(139,173,211,.3);background:rgba(8,20,35,.55);
+}
+#viewLobby #aiGenerate {width:100%;margin:4px 0 0;padding:15px 16px;border-radius:12px;}
+#viewLobby .ai-bank-status {margin-top:16px;padding:11px 13px;border-radius:10px;background:rgba(13,36,47,.6);border:1px solid rgba(117,188,181,.23);font-size:11px;line-height:1.5;}
+#viewLobby .ai-bank-note {margin-top:13px;line-height:1.5;color:#afbed1;}
+#viewLobby .ai-progress {padding:12px 13px;border-radius:12px;background:rgba(10,25,42,.47);border:1px solid rgba(139,173,211,.16);margin-top:12px;}
+#viewLobby .ai-progress-caption {margin-top:9px;}
+#viewLobby .ai-pixel-sky {right:18px;top:16px;opacity:.55;}
+#viewLobby .qr-panel,#viewLobby #settingsPanel,#viewLobby .host-leaderboard {border-radius:20px;}
+#viewResults > .ai-bank-panel {display:none!important;}
+
 </style>
 </head>
 <body>
@@ -37,6 +151,7 @@ body.urgent::after {
   <!-- ===================== LOBBY ===================== -->
   <div class="host-body" id="viewLobby">
     <div class="card qr-panel">
+      <svg class="qr-pixel-sky" viewBox="0 0 116 42" aria-hidden="true" shape-rendering="crispEdges"><path d="M3 26h10v-6h9v-9h20v6h12v9h12v7H3z" fill="#739dcb" opacity=".85"/><path d="M7 25h10v-6h8v-7h14v5h10v8h11v5H7z" fill="#c5e4f8"/><path d="M65 16h10V9h10V4h9v5h10v7h8v6H65z" fill="#78b7dc"/><path d="M67 16h10V9h9V6h8v5h8v7h7v3H67z" fill="#d0eeff"/><path d="M52 26h17v3H52z" fill="#f0c98c"/></svg>
       <div class="eyebrow">SCAN TO JOIN</div>
       <img id="qr" src="/qr.png" alt="Join QR code" style="margin-top:18px">
       <div class="qr-url" id="qrUrl">—</div>
@@ -49,16 +164,52 @@ body.urgent::after {
         <span class="rh-k">PLAYERS IN THE ROOM</span>
       </div>
       <div class="roster-grid" id="rosterGrid"></div>
+      <div id="aiBankDock"></div>
+      <section class="panel ai-bank-panel" id="aiBankPanel">
+        <svg class="ai-pixel-sky" viewBox="0 0 91 38" aria-hidden="true" shape-rendering="crispEdges"><path d="M2 25h11v-6h11v-7h19v7h12v6h10v6H2z" fill="#608bb5"/><path d="M7 23h11v-6h10v-6h12v8h13v8H7z" fill="#a6d0ed"/><path d="M64 9h6V5h8v4h7v4h6v4H64z" fill="#a4c8e6"/><path d="M66 8h7V4h7v5h9v4H66z" fill="#dcefff"/></svg>
+        <div class="eyebrow">QUESTION BANK // AI</div>
+        <div class="ai-tabs" role="tablist">
+          <button type="button" class="ai-tab active" id="aiTabTrivia">TRIVIA</button>
+          <button type="button" class="ai-tab" id="aiTabStudy">STUDY</button>
+        </div>
+        <div class="ai-row" id="aiTopicRow">
+          <label for="aiTopic">TRIVIA THEME</label>
+          <input id="aiTopic" maxlength="180" placeholder="e.g. Space, Physics, Movies" />
+        </div>
+        <div class="ai-row" id="aiFileRow" style="display:none">
+          <label for="aiPdf">LECTURE NOTES / SLIDES (PDF, MAX 8 MB)</label>
+          <input id="aiPdf" type="file" accept=".pdf,application/pdf" />
+        </div>
+        <div class="ai-row"><label for="aiLevel" id="aiLevelLabel">DIFFICULTY</label>
+          <select id="aiLevel"><option value="easy">EASY</option><option value="medium" selected>MEDIUM</option><option value="hard">HARD</option></select></div>
+        <div class="ai-row"><label for="aiProvider">AI MODEL</label>
+          <select id="aiProvider"><option value="grok" selected>GROK (xAI)</option><option value="gemini">GEMINI (Google)</option></select></div>
+        <div class="ai-row"><label for="aiCount">QUESTIONS TO GENERATE</label>
+          <select id="aiCount"><option value="10">10</option><option value="20">20</option><option value="30">30</option><option value="50" selected>50</option><option value="75">75</option><option value="100">100</option></select></div>
+        <button type="button" class="arcade-btn sm" id="aiGenerate"><span class="ab-top">GENERATE 50 QUESTIONS</span></button>
+        <div class="ai-bank-status" id="aiBankStatus" aria-live="polite">BUILT-IN TRIVIA READY</div>
+        <div class="ai-progress" id="aiProgress" style="display:none" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div class="ai-progress-track"><div id="aiProgressFill" class="ai-progress-fill"></div></div>
+          <div class="ai-progress-caption"><span id="aiProgressStage">PREPARING…</span><span id="aiProgressCount">0 / 50</span></div>
+        </div>
+        <div class="ai-bank-note">Create a new question bank in the lobby before your next game.</div>
+      </section>
+      <div class="host-leaderboard" id="hostLobbyBoard">
+        <div class="lobby-board-label">PILOT LEADERBOARD</div>
+        <div id="hostLobbyRanks" class="lobby-ranks"></div>
+      </div>
       <div id="lobbyEmpty" style="color:var(--text-mute);font-size:15px;margin-top:10px">
         Waiting for phones to connect…
       </div>
 
+    </div>
+    <aside class="lobby-settings-side">
       <button class="arcade-btn ghost sm" id="setToggle"
               style="margin-top:22px;width:auto;padding:12px 20px">
         <span class="ab-top">⚙ MATCH SETTINGS</span>
       </button>
 
-      <div class="panel settings" id="settingsPanel" style="display:none">
+      <div class="panel settings" id="settingsPanel" style="display:block">
         <div class="set-grid">
           <div class="set" data-key="round_seconds" data-min="15" data-max="600" data-step="5">
             <span class="set-k">ROUND LENGTH</span>
@@ -122,7 +273,7 @@ body.urgent::after {
           </button>
         </div>
       </div>
-    </div>
+    </aside>
   </div>
 
   <!-- ===================== ROUND ===================== -->
@@ -133,7 +284,7 @@ body.urgent::after {
       <div style="margin-top:14px;font-size:17px;color:var(--text-dim)">
         Round <span id="roundNo" class="mono">1</span> of <span id="roundTot" class="mono">3</span>
       </div>
-      <div class="card" style="margin-top:32px;padding:24px">
+      <div class="card" style="display:none;margin-top:32px;padding:24px">
         <div class="eyebrow">NEXT CARD DRAW</div>
         <div class="mono" id="powerClock" style="font-size:46px;font-weight:850;margin-top:8px">10</div>
         <div style="font-size:13px;color:var(--text-mute);margin-top:6px">
@@ -228,13 +379,15 @@ const $ = id => document.getElementById(id);
 startSky(document.getElementById('sky'), { density: .7 });
 let ws, phase = 'lobby', endsAt = 0, powerAt = 0;
 
-const ROOM = (new URLSearchParams(location.search).get('code') || '').toUpperCase();
+const URL_PARAMS = new URLSearchParams(location.search);
+const ROOM = (URL_PARAMS.get('code') || '').toUpperCase();
+const HOST_TOKEN = URL_PARAMS.get('token') || '';
 if (!ROOM) location.replace('/');
 
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/ws`);
-  ws.onopen = () => ws.send(JSON.stringify({ t: 'host_watch', code: ROOM }));
+  ws.onopen = () => ws.send(JSON.stringify({ t: 'host_watch', code: ROOM, hostToken: HOST_TOKEN }));
   ws.onmessage = e => handle(JSON.parse(e.data));
   ws.onclose = () => setTimeout(connect, 1200);
 }
@@ -246,6 +399,9 @@ fetch('/api/room/' + ROOM).then(r => r.json()).then(() => {
 }).catch(() => {});
 
 function view(name) {
+  // The question builder belongs only to the lobby, never the results reveal.
+  const panel = $('aiBankPanel');
+  if (panel.previousElementSibling !== $('aiBankDock')) $('aiBankDock').after(panel);
   ['Lobby','Round','Discuss','Vote','Fight','Results'].forEach(v => {
     const el = $('view' + v);
     el.style.display = (v === name)
@@ -274,6 +430,7 @@ function handle(m) {
     $('votesOf').textContent = m.players.filter(p => p.alive).length;
 
     paintRoster(m.players);
+    if (m.phase === 'lobby') renderLobbyBoard(m.leaderboard && m.leaderboard.length ? m.leaderboard : m.players);
     paintScores(m.players);
     if (m.ring) paintCircle(m.ring);
 
@@ -289,9 +446,27 @@ function handle(m) {
       if (mid) applySettings(m.settings);
     }
     $('settingsPanel').classList.toggle('locked', mid);
+    AI_BANK.editable = (m.phase === 'lobby');
+    AI_BANK.serverBusy = !!m.questionBank?.busy;
+    AI_BANK.current = m.questionBank;
+    document.querySelectorAll('#aiBankPanel input, #aiBankPanel select, #aiBankPanel button').forEach(el => el.disabled = !AI_BANK.editable || AI_BANK.busy || AI_BANK.serverBusy);
+    const bank = m.questionBank;
+    const target = Math.max(1, Number(bank?.target) || 100);
+    const count = Math.min(target, Math.max(0, Number(bank?.generated) || 0));
+    const progress = $('aiProgress');
+    progress.style.display = AI_BANK.serverBusy ? '' : 'none';
+    progress.setAttribute('aria-valuemax', String(target));
+    progress.setAttribute('aria-valuenow', String(count));
+    $('aiProgressFill').style.width = (count / target * 100) + '%';
+    $('aiProgressStage').textContent = bank?.stage || 'Preparing…';
+    $('aiProgressCount').textContent = count + ' / ' + target;
+    if (!AI_BANK.busy || AI_BANK.serverBusy) $('aiBankStatus').textContent = bank ?
+      (bank.error ? `ERROR: ${bank.error}` :
+      AI_BANK.serverBusy ? `GENERATING QUESTIONS · ${count}/${target} READY` :
+      `${bank.title} · ${bank.count} QUESTIONS READY`) : 'BUILT-IN TRIVIA READY';
     const humans = m.players.filter(p => !p.bot).length;
-    $('startBtn').disabled = humans < 3 || mid;
-    $('soloBtn').disabled = humans < 1 || mid;
+    $('startBtn').disabled = humans < 3 || mid || AI_BANK.serverBusy;
+    $('soloBtn').disabled = humans < 1 || mid || AI_BANK.serverBusy;
     $('lobbyEmpty').style.display = m.players.length ? 'none' : 'block';
     $('lobbyBtn').style.display = (m.phase === 'results') ? '' : 'none';
 
@@ -423,10 +598,14 @@ function drawArena() {
   const c = cv.getContext('2d');
   c.setTransform(dpr, 0, 0, dpr, 0, 0);
   c.clearRect(0, 0, w, h);
-  c.fillStyle = '#080c16'; c.fillRect(0, 0, w, h);
-  c.strokeStyle = '#1c2c40'; c.lineWidth = 1;
-  for (let x = 0; x <= w; x += 50) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke(); }
-  for (let y = 0; y <= h; y += 50) { c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke(); }
+  // Overhead pixel-art grassland for the host; phones keep the sky/horizon cockpit.
+  c.fillStyle = '#568e38'; c.fillRect(0, 0, w, h);
+  for (let y = 0; y < h; y += 20) for (let x = 0; x < w; x += 20) {
+    const n = ((Math.floor(x/20) * 53 + Math.floor(y/20) * 97) % 13);
+    c.fillStyle = n < 3 ? '#46792e' : n > 10 ? '#6da64a' : '#568e38';
+    c.fillRect(x, y, 20, 20);
+    if (n % 4 === 0) {c.fillStyle='#82b857';c.fillRect(x+4,y+12,3,3);c.fillRect(x+12,y+4,3,3);}
+  }
   if (!ARENA.frame) return;
   const sx = w / ARENA.w, sy = h / ARENA.h;
   for (const b of ARENA.frame.bullets || []) {
@@ -440,12 +619,14 @@ function drawArena() {
     if (!j.alive) continue;
     c.save(); c.translate(j.x * sx, j.y * sy);
     c.rotate((j.heading + 90) * Math.PI / 180);
-    c.fillStyle = '#aab9d3';
-    c.beginPath(); c.moveTo(0, -15); c.lineTo(-7, 10); c.lineTo(0, 5); c.lineTo(7, 10); c.closePath(); c.fill();
-    c.fillStyle = '#3e8fff'; c.fillRect(-17, 2, 34, 4);
+    c.fillStyle = '#d4deef';
+    c.beginPath(); c.moveTo(0, -21); c.lineTo(-9, 14); c.lineTo(0, 8); c.lineTo(9, 14); c.closePath(); c.fill();
+    c.fillStyle = '#8095b8'; c.fillRect(-5, -5, 10, 22);
+    c.fillStyle = '#6bc0ff'; c.fillRect(-21, 3, 42, 5);
+    c.fillStyle = '#7d8eac'; c.fillRect(-10, 11, 6, 7); c.fillRect(4, 11, 6, 7);
     c.restore();
-    c.textAlign = 'center'; c.font = 'bold 12px monospace'; c.fillStyle = '#eaf0ff';
-    c.fillText(roster.get(j.pid)?.name || j.name || 'PILOT', j.x * sx, j.y * sy - 22);
+    c.textAlign = 'center'; c.font = 'bold 13px monospace'; c.fillStyle = '#eaf0ff';
+    c.fillText(`${roster.get(j.pid)?.name || j.name || 'PILOT'} · ${Math.round(j.hp)} HP`, j.x * sx, j.y * sy - 28);
   }
 }
 
@@ -473,6 +654,17 @@ function arenaFeedSafe(text, kind) {
   if (!feed) return;
   feed.prepend(el);
   while (feed.children.length > 6) feed.lastChild.remove();
+}
+
+function renderLobbyBoard(players) {
+  const board = $('hostLobbyRanks');
+  const sorted = [...(players || [])].sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+  board.innerHTML = sorted.length ? sorted.map((p, i) => `<div class="lobby-rank">
+    <span class="lobby-rank-no">${String(i + 1).padStart(2, '0')}</span>
+    ${avatarSVG(p.avatar || 'fox', 28, {bg: '#0b0d14'})}
+    <span class="lobby-rank-name"></span><span class="lobby-rank-pts">${Number(p.score) || 0} PTS</span>
+  </div>`).join('') : '<div class="lobby-board-empty">NO SCORES YET</div>';
+  board.querySelectorAll('.lobby-rank-name').forEach((el, i) => { el.textContent = sorted[i].name; });
 }
 
 function paintRoster(players) {
@@ -710,6 +902,53 @@ function hostReturnLobby() {
   ws.send(JSON.stringify({ t: 'reset' }));
 }
 $('lobbyBtn').onclick = hostReturnLobby;
+
+/* Grok question bank: host-only setup. API key never appears in the browser. */
+const AI_BANK = { mode: 'trivia', busy: false, serverBusy: false, editable: true, current: null };
+function chooseAiMode(mode) {
+  AI_BANK.mode = mode;
+  $('aiTabTrivia').classList.toggle('active', mode === 'trivia');
+  $('aiTabStudy').classList.toggle('active', mode === 'study');
+  $('aiTopicRow').style.display = mode === 'trivia' ? '' : 'none';
+  $('aiFileRow').style.display = mode === 'study' ? '' : 'none';
+  $('aiLevelLabel').textContent = mode === 'study' ? 'COMFORTABILITY LEVEL' : 'DIFFICULTY';
+}
+$('aiTabTrivia').onclick = () => chooseAiMode('trivia');
+$('aiTabStudy').onclick = () => chooseAiMode('study');
+$('aiCount').onchange = () => { $('aiGenerate').querySelector('.ab-top').textContent = `GENERATE ${$('aiCount').value} QUESTIONS`; };
+$('aiGenerate').onclick = async () => {
+  if (!AI_BANK.editable || AI_BANK.busy || AI_BANK.serverBusy || !HOST_TOKEN) return;
+  const form = new FormData();
+  form.append('mode', AI_BANK.mode);
+  form.append('provider', $('aiProvider').value);
+  form.append('level', $('aiLevel').value);
+  form.append('count', $('aiCount').value);
+  if (AI_BANK.mode === 'trivia') {
+    if (!$('aiTopic').value.trim()) { $('aiBankStatus').textContent = 'ENTER A TRIVIA THEME'; return; }
+    form.append('topic', $('aiTopic').value.trim());
+  } else {
+    const file = $('aiPdf').files[0];
+    if (!file || !file.name.toLowerCase().endsWith('.pdf') || file.size > 8 * 1024 * 1024) {
+      $('aiBankStatus').textContent = 'SELECT A PDF SMALLER THAN 8 MB'; return;
+    }
+    form.append('pdf', file);
+  }
+  AI_BANK.busy = true;
+  $('aiGenerate').disabled = true;
+  $('aiBankStatus').textContent = `${$('aiProvider').value.toUpperCase()} IS GENERATING ${$('aiCount').value} QUESTIONS…`;
+  try {
+    const res = await fetch(`/api/room/${encodeURIComponent(ROOM)}/questions`, {method:'POST', body: form, headers: {'X-Scramble-Host-Token': HOST_TOKEN}});
+    const data = await res.json();
+    if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Generation failed');
+    $('aiBankStatus').textContent = `${$('aiProvider').value.toUpperCase()} STARTED · GENERATING ALL QUESTIONS`;
+  } catch(e) {
+    $('aiBankStatus').textContent = `ERROR: ${e.message}`;
+  } finally {
+    AI_BANK.busy = false;
+    $('aiGenerate').disabled = !AI_BANK.editable;
+  }
+};
+
 const hostLogo = document.querySelector('.host-logo');
 hostLogo.style.cursor = 'pointer';
 hostLogo.setAttribute('role', 'button');

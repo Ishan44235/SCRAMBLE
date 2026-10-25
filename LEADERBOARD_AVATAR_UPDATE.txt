@@ -1,0 +1,1 @@
+Host and player lobby now show points-ranked pilots. The last match leaderboard is preserved before round score reset. Replaced the purple cat avatar slot with a blue pixel-art Bibble-inspired character.

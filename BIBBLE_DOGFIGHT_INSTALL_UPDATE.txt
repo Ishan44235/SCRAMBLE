@@ -1,0 +1,13 @@
+Update summary
+
+- Bibble avatar now has purple hair.
+- Dogfight player view now shows the back of a fighter jet instead of the old line-and-dot marker.
+- Added engine fire glow tied to throttle level.
+- Enemy plane markers now include a light aim-assist lock on a target near center.
+- Gun aiming on the server has mild aim assist and slightly more forgiving hit registration.
+- Added a rotate-to-fit install animation with a turn-progress meter and fitted glow.
+
+Verification
+- JavaScript syntax checks passed.
+- Python compile checks passed.
+- Automated tests: 12 passed.

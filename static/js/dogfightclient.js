@@ -5,7 +5,6 @@
      bank the phone left/right   -> turn
      pitch it forward/back       -> throttle
      GUNS button (hold)          -> fire
-     MISSILE button (tap)        -> launch
    ============================================================ */
 
 const FIGHT = {
@@ -22,6 +21,9 @@ const FIGHT = {
   arena: [1600, 900],
   blips: [],
   me: null,
+  lastGunFx: 0,
+  warnTimer: null,
+  skyScroll: 0,
 };
 
 /* ------------------------------------------------------------ hangar */
@@ -111,6 +113,23 @@ function showCrateOpen(m) {
   clearTimeout(FIGHT.popTimer);
   FIGHT.popTimer = setTimeout(() => pop.classList.remove('show'), 2600);
   haptic(best.length ? [25, 40, 25, 40] : 20);
+}
+
+/* Earned part: rotate the upright phone to install it. */
+function showInstallPrompt(part) {
+  const el = $('installPrompt');
+  if (!el) return;
+  $('installPartName').textContent = part.name;
+  el.classList.add('show');
+}
+function hideInstallPrompt() {
+  const el = $('installPrompt');
+  if (el) el.classList.remove('show');
+}
+function installPartTap() {
+  if (STATE.pendingInstall != null) {
+    send({ t: 'install_part', token: STATE.pendingInstall });
+  }
 }
 
 /* ------------------------------------------------- part earned popup */
@@ -214,6 +233,7 @@ function startFight() {
   FIGHT.throttle = 0.5;
   FIGHT.alive = true;
   if (!loopRunning) startLoop();
+  if (motion.live) motion.calibrateTilt();
   show('s-fight');
   wireFightControls();
 
@@ -221,6 +241,7 @@ function startFight() {
   clearInterval(FIGHT.sendTimer);
   FIGHT.sendTimer = setInterval(() => {
     if (!FIGHT.on) return;
+    fightTick();
     send({ t: 'ctl', steer: +FIGHT.steer.toFixed(3),
            throttle: +FIGHT.throttle.toFixed(3), fire: FIGHT.firing });
   }, 50);
@@ -231,9 +252,15 @@ function stopFight() {
   FIGHT.firing = false;
   FIGHT.me = null;
   FIGHT.blips = [];
+  FIGHT.lastGunFx = 0;
+  FIGHT.skyScroll = 0;
   clearInterval(FIGHT.sendTimer);
   const contacts = $('hzContacts');
   if (contacts) contacts.innerHTML = '';
+  const fx = $('hzFx');
+  if (fx) fx.innerHTML = '';
+  const warn = $('hzWarning');
+  if (warn) { warn.classList.remove('on'); warn.textContent = ''; }
 }
 
 /** Read bank and pitch off the sensors; called from the main loop. */
@@ -251,16 +278,77 @@ function fightTick() {
     // throttle: pitch forward for more
     const pitch = Math.max(-30, Math.min(30, motion.pitchRel));
     FIGHT.throttle = Math.min(1, Math.max(0, 0.5 + pitch / 55));
+  } else {
+    FIGHT.steer = 0;
+    FIGHT.throttle = 0.5;
   }
 
   // horizon mirrors the bank so the control is readable
-  $('hzSky').style.transform = `rotate(${(-FIGHT.steer * 32).toFixed(1)}deg)`;
+  const sky = $('hzSky');
+  if (sky) {
+    FIGHT.skyScroll = (FIGHT.skyScroll + (0.55 + FIGHT.throttle * 2.2)) % 240;
+    const drift = FIGHT.steer * 18;
+    sky.style.transform = `translate(${(drift * -0.35).toFixed(1)}px, ${(FIGHT.throttle * 7).toFixed(1)}px) rotate(${(-FIGHT.steer * 18).toFixed(1)}deg)`;
+  }
   const tp = Math.round(FIGHT.throttle * 100);
   $('fThrottle').style.width = tp + '%';
   $('fThrottleV').textContent = tp + '%';
+  const glow = $('hzJetGlow');
+  if (glow) {
+    const scale = 0.72 + FIGHT.throttle * 0.9;
+    glow.style.opacity = (0.25 + FIGHT.throttle * 0.75).toFixed(2);
+    glow.style.transform = `translateX(-50%) scale(${scale.toFixed(2)}, ${(0.8 + FIGHT.throttle * 1.2).toFixed(2)})`;
+  }
 
   const left = Math.max(0, (FIGHT.endsAt - performance.now()) / 1000);
   $('fClock').textContent = fmt(left);
+
+  const now = performance.now();
+  if (FIGHT.firing && now - FIGHT.lastGunFx > 95) {
+    fightFx('shot');
+    FIGHT.lastGunFx = now;
+  }
+}
+
+function showFightWarning(text, ms = 950) {
+  const el = $('hzWarning');
+  if (!el) return;
+  el.textContent = text;
+  el.classList.add('on');
+  clearTimeout(FIGHT.warnTimer);
+  FIGHT.warnTimer = setTimeout(() => el.classList.remove('on'), ms);
+}
+
+function fightFx(kind, xPct, yPct) {
+  const box = $('hzFx');
+  if (!box) return;
+  const el = document.createElement('div');
+  if (kind === 'shot') {
+    el.className = 'fx-shot';
+    el.style.left = (48 + Math.random() * 6) + '%';
+  } else if (kind === 'missile') {
+    el.className = 'fx-missile';
+    el.style.left = (47 + Math.random() * 8) + '%';
+  } else if (kind === 'hit') {
+    const flash = document.createElement('div');
+    flash.className = 'fx-hitflash';
+    box.appendChild(flash);
+    flash.addEventListener('animationend', () => flash.remove());
+    el.className = 'fx-burst';
+    el.style.left = (xPct == null ? 50 : xPct) + '%';
+    el.style.top = (yPct == null ? 48 : yPct) + '%';
+  } else if (kind === 'explode') {
+    const flash = document.createElement('div');
+    flash.className = 'fx-lockflash';
+    box.appendChild(flash);
+    flash.addEventListener('animationend', () => flash.remove());
+    el.className = 'fx-burst';
+    el.style.borderColor = 'rgba(255,140,92,.95)';
+    el.style.left = (xPct == null ? 50 : xPct) + '%';
+    el.style.top = (yPct == null ? 42 : yPct) + '%';
+  }
+  box.appendChild(el);
+  el.addEventListener('animationend', () => el.remove());
 }
 
 /**
@@ -325,28 +413,34 @@ function angleTo(a, b) {
 }
 
 function contactPlaneSVG() {
-  return `<svg viewBox="0 0 44 28" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
-    <rect x="20" y="2" width="4" height="24" fill="#ff9ea1"/>
-    <rect x="9" y="12" width="26" height="4" fill="#ff6b70"/>
-    <rect x="4" y="10" width="6" height="8" fill="#ff6b70"/>
-    <rect x="34" y="10" width="6" height="8" fill="#ff6b70"/>
-    <rect x="17" y="0" width="10" height="5" fill="#ffd0d3"/>
+  return `<svg viewBox="0 0 52 34" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+    <rect x="24" y="2" width="4" height="28" fill="#ffd5d7"/>
+    <rect x="22" y="0" width="8" height="6" fill="#fff0f1"/>
+    <rect x="18" y="8" width="16" height="14" fill="#ff7f86"/>
+    <rect x="9" y="13" width="13" height="6" fill="#ff6570"/>
+    <rect x="30" y="13" width="13" height="6" fill="#ff6570"/>
+    <rect x="4" y="11" width="5" height="10" fill="#ff4d5f"/>
+    <rect x="43" y="11" width="5" height="10" fill="#ff4d5f"/>
+    <rect x="18" y="24" width="6" height="7" fill="#ff6570"/>
+    <rect x="28" y="24" width="6" height="7" fill="#ff6570"/>
+    <rect x="23" y="10" width="6" height="7" fill="#ffe6e7" opacity=".9"/>
   </svg>`;
 }
 
 function contactArrowSVG(dir) {
   if (dir === 'left') {
-    return `<svg viewBox="0 0 34 22" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
-      <polygon points="4,11 18,2 18,7 30,7 30,15 18,15 18,20" fill="#ff6b70"/>
-      <polygon points="2,11 16,4 16,8 29,8 29,14 16,14 16,18" fill="#ff9ea1" opacity=".55"/>
+    return `<svg viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+      <polygon points="3,14 23,3 23,25" fill="#ff5f69"/>
+      <polygon points="7,14 21,6 21,22" fill="#ffd0d3" opacity=".6"/>
     </svg>`;
   }
-  return `<svg viewBox="0 0 34 22" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
-    <polygon points="30,11 16,2 16,7 4,7 4,15 16,15 16,20" fill="#ff6b70"/>
-    <polygon points="32,11 18,4 18,8 5,8 5,14 18,14 18,18" fill="#ff9ea1" opacity=".55"/>
+  return `<svg viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+    <polygon points="25,14 5,3 5,25" fill="#ff5f69"/>
+    <polygon points="21,14 7,6 7,22" fill="#ffd0d3" opacity=".6"/>
   </svg>`;
 }
 
+function escapeTargetName(s) { return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
 function drawContacts(me, blips, arena) {
   const box = $('hzContacts');
   if (!box) return;
@@ -367,26 +461,29 @@ function drawContacts(me, blips, arena) {
       const dist = Math.hypot(dx, dy);
       const bearing = Math.atan2(dy, dx) * 180 / Math.PI;
       const rel = angleTo(me.heading, bearing);
-      return { pid: b.p, dist, rel };
+      return { pid: b.p, name: b.n || "PILOT", hp: b.hp ?? 0, maxHp: b.maxHp || 100, dist, rel };
     })
     .sort((a, b) => a.dist - b.dist);
 
+  const lock = enemies.find(e => Math.abs(e.rel) <= 18) || null;
   box.innerHTML = enemies.map(e => {
     const near = Math.max(0, Math.min(1, 1 - e.dist / range));
-    const size = Math.round(18 + near * 24);
+    const pop = Math.pow(near, 0.72);
+    const size = Math.round(14 + pop * 38);
     if (Math.abs(e.rel) <= FOV) {
       const lane = visCount++ % 3;
       const x = 50 + (e.rel / FOV) * 42;
-      const top = 18 + (1 - (e.dist / range)) * 25 + lane * 9;
+      const top = 14 + (1 - (e.dist / range)) * 28 + lane * 8;
       const h = Math.round(size * 0.64);
-      return `<div class="hz-contact plane" style="left:calc(${x}% - ${size / 2}px);top:${top}%;width:${size}px;height:${h}px">${contactPlaneSVG()}</div>`;
+      const cls = e.pid === (lock && lock.pid) ? 'hz-contact plane assist' : 'hz-contact plane';
+      return `<div class="${cls}" style="left:calc(${x}% - ${size / 2}px);top:${top}%;width:${size}px;height:${h}px">${contactPlaneSVG()}<span class="hz-target-label">${escapeTargetName(e.name)} · ${Math.round(Math.max(0, e.hp))} HP</span></div>`;
     }
 
     const side = e.rel < 0 ? 'left' : 'right';
     const lane = side === 'left' ? leftCount++ : rightCount++;
-    const top = 14 + lane * 18 + near * 18;
-    const h = Math.round(size * 0.7);
-    return `<div class="hz-contact arrow ${side}" style="${side}:6px;top:${top}%;width:${size}px;height:${h}px">${contactArrowSVG(side)}</div>`;
+    const top = 12 + lane * 17 + pop * 22;
+    const h = Math.round(size * 0.88);
+    return `<div class="hz-contact tri ${side}" style="${side}:6px;top:${top}%;width:${size}px;height:${h}px">${contactArrowSVG(side)}<span class="hz-target-label ${side}">${escapeTargetName(e.name)} · ${Math.round(Math.max(0,e.hp))} HP</span></div>`;
   }).join('');
 }
 
@@ -407,9 +504,6 @@ function fightMe(m) {
   fill.className = 'hp-fill' + (pct < 25 ? ' crit' : pct < 55 ? ' warn' : '');
   $('fHpText').textContent = Math.round(me.hp);
   $('fKills').textContent = me.kills;
-  $('fMissiles').textContent = me.missiles;
-  $('fMslCount').textContent = me.missiles + ' LEFT';
-  $('fMissile').classList.toggle('dis', me.missiles <= 0 || me.failed.includes('missiles'));
   $('fGuns').classList.toggle('dis', me.failed.includes('guns'));
 
   // a sabotaged part giving out, announced on your own phone
@@ -429,7 +523,19 @@ function fightMe(m) {
   }
 
   (m.events || []).forEach(e => {
+    if (e.kind === 'hit' && e.shooterPid === STATE.pid && e.pid !== STATE.pid) {
+      showFightWarning('HIT CONFIRMED', 450);
+      fightFx('hit', 50, 40);
+      haptic(14);
+    }
+    if (e.kind === 'hit' && e.pid === STATE.pid) {
+      fightFx(e.weapon === 'missile' ? 'explode' : 'hit');
+      showFightWarning(e.weapon === 'missile' ? 'MISSILE HIT' : 'TAKING FIRE', 900);
+      haptic(e.weapon === 'missile' ? [30, 50, 30] : 18);
+    }
     if (e.kind === 'kill' && e.victimPid === STATE.pid) {
+      fightFx('explode', 50, 42);
+      showFightWarning('SHOT DOWN', 1200);
       $('fDeadSub').textContent = e.killer
         ? `${e.killer} got you with ${e.weapon === 'missile' ? 'a missile' : 'guns'}.`
         : 'Respawning…';
@@ -475,12 +581,7 @@ function wireFightControls() {
   guns.addEventListener('mouseup', () => hold(false));
   guns.addEventListener('mouseleave', () => hold(false));
 
-  const fire = e => {
-    e.preventDefault();
-    if (FIGHT.missiles > 0) { send({ t: 'missile' }); haptic(35); }
-  };
-  $('fMissile').addEventListener('touchstart', fire, { passive: false });
-  $('fMissile').addEventListener('click', fire);
+
 }
 
 /* ============================================================

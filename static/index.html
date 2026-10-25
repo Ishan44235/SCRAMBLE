@@ -88,7 +88,7 @@ $('btnHost').onclick = async () => {
   try {
     const res = await fetch('/api/room', { method: 'POST' });
     const d = await res.json();
-    location.href = '/host?code=' + d.code;
+    location.href = '/host?code=' + d.code + '&token=' + encodeURIComponent(d.hostToken);
   } catch (e) {
     $('btnHost').disabled = false;
     $('btnHost').querySelector('.ab-top').textContent = 'HOST GAME';

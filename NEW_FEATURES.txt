@@ -1,0 +1,24 @@
+SCRAMBLE gesture and cockpit update
+
+SHAKE TO REROLL
+- Shake during an active quiz question to request a new one.
+- 2 rerolls per player per round; server checks question id and quota.
+- A rerolled question earns no points, penalties or parts.
+- Tapping to answer and sliding sideways to pass remain unchanged.
+
+ROTATE TO INSTALL
+- A newly earned upgrade is held for installation.
+- Rotate the phone about its screen-normal axis to install it.
+- Tap fallback shown in the arcade part prompt.
+- Automatic installation after 5 seconds if no motion is detected, and at round end.
+
+CLEANER PHONE COCKPIT
+- More compact top status bar, flight controls, and radar.
+- Existing aircraft horizon and enemy direction markers retained.
+- Existing host dogfight display unchanged.
+
+Updated: server.py, static/js/player.js, static/js/motion.js,
+static/js/dogfightclient.js, static/player.html, static/css/style.css.
+
+Tests: Python/JavaScript syntax, five unit tests pass. Physical phone
+shake/rotation sensitivity and live browser behavior not verified.

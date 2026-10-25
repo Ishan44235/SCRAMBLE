@@ -49,6 +49,7 @@
   <ul>
     <li><span class="dot"></span><div><b style="color:var(--text)">Tap</b> an answer to submit it. No twist needed.</div></li>
     <li><span class="dot"></span><div><b style="color:var(--text)">Slide</b> the upright phone left or right to pass a question to that neighbor.</div></li>
+    <li><span class="dot"></span><div><b style="color:var(--text)">Shake</b> for a new question (2 rerolls per round), and <b>rotate</b> to install an earned jet part.</div></li>
     <li><span class="dot"></span><div><b style="color:var(--text)">Bank</b> the upright phone left or right to steer in dogfights.</div></li>
     <li><span class="dot"></span><div><b style="color:var(--text)">Use the on-screen pass controls</b> if motion is unavailable.</div></li>
   </ul>
@@ -71,9 +72,25 @@
   <p style="margin-top:28px;font-size:12.5px;color:var(--text-mute);max-width:290px">
     Keep your phone unlocked. You'll get a call when the game begins.
   </p>
+  <div class="lobby-leaderboard" id="playerLobbyBoard">
+    <div class="lobby-board-label">PILOT LEADERBOARD</div>
+    <div id="playerLobbyRanks" class="lobby-ranks"></div>
+  </div>
   <button class="btn ghost" id="changeBtn" style="margin-top:22px;width:auto;padding:13px 24px;font-size:12.5px">
     CHANGE NAME OR FACE
   </button>
+</section>
+
+<!-- ==================== PHASE CONTROLS ======================= -->
+<section class="screen phase-brief" id="s-phase-brief">
+  <div class="brief-header">FLIGHT CONTROL // NEXT PHASE</div>
+  <h2 id="briefTitle">GET READY</h2>
+  <div class="brief-controls" id="briefControls"></div>
+  <div class="brief-bottom">
+    <div class="brief-time"><span id="briefClock">10</span><span class="brief-unit">SEC</span></div>
+    <p id="briefReadyCount">Waiting for pilots…</p>
+    <button class="btn" id="briefReadyBtn">READY</button>
+  </div>
 </section>
 
 <!-- =========================== CALL ============================= -->
@@ -142,9 +159,19 @@
      to hold it during the game. Then tap below — that angle becomes your
      neutral.</p>
 
-  <div class="tiltbar" style="margin:28px 0 10px;position:relative">
-    <div class="tb-zone"></div>
-    <div class="tb-needle" id="calibNeedle"></div>
+  <div class="axis-panel" aria-label="Live phone motion axes">
+    <div class="axis-row">
+      <div class="axis-caption"><span>LEFT / RIGHT · GAMMA</span><span class="mono" id="axisGammaValue">—</span></div>
+      <div class="tiltbar axis-bar"><div class="tb-zone"></div><div class="tb-needle" id="calibNeedle"></div></div>
+    </div>
+    <div class="axis-row">
+      <div class="axis-caption"><span>FORWARD / BACK · BETA</span><span class="mono" id="axisBetaValue">—</span></div>
+      <div class="tiltbar axis-bar"><div class="tb-zone"></div><div class="tb-needle" id="calibBetaNeedle"></div></div>
+    </div>
+    <div class="axis-row">
+      <div class="axis-caption"><span>ROTATION · ALPHA</span><span class="mono" id="axisAlphaValue">—</span></div>
+      <div class="tiltbar axis-bar"><div class="tb-zone"></div><div class="tb-needle" id="calibAlphaNeedle"></div></div>
+    </div>
   </div>
   <div style="text-align:center;font-size:12px;color:var(--text-mute);letter-spacing:.12em" id="calibStatus">
     WAITING FOR SENSOR…
@@ -165,7 +192,7 @@
       <li><span class="dot"></span><div><b>Tap</b> one of the four answers. Tilting does not select answers.</div></li>
       <li><span class="dot"></span><div><b>Slide left/right</b> while holding the phone upright to pass to your left/right neighbor.</div></li>
       <li><span class="dot"></span><div><b>Or tap</b> the left/right neighbor to pass.</div></li>
-      <li><span class="dot"></span><div><b>No twisting or shaking</b> is needed for quiz answers or passing.</div></li>
+      <li><span class="dot"></span><div><b>Shake</b> to reroll (twice per round). <b>Rotate</b> the phone to install a new aircraft part, or use the tap fallback.</div></li>
     </ul>
     <div class="gest-head">WHEN THINGS GO WRONG</div>
     <ul>
@@ -176,7 +203,7 @@
     <ul>
       <li><span class="dot"></span><div><b>Bank</b> left and right to turn.</div></li>
       <li><span class="dot"></span><div><b>Pitch forward</b> for throttle, back to slow down.</div></li>
-      <li><span class="dot"></span><div>Hold <b>GUNS</b>, tap <b>MISSILE</b>.</div></li>
+      <li><span class="dot"></span><div>Hold <b>GUNS</b> to fire.</div></li>
     </ul>
   </div>
 
@@ -238,7 +265,7 @@
       <div class="q-opt" data-i="3"><span class="q-key">D</span><span class="q-label"></span></div>
     </div>
 
-    <div class="q-hint" id="qHint">TAP ANSWER · SLIDE PHONE LEFT/RIGHT TO PASS</div>
+    <div class="q-hint" id="qHint">TAP TO ANSWER · SHAKE TO REROLL · SLIDE TO PASS</div>
     <div class="q-flash" id="qFlash"></div>
     <div class="audit-card" id="auditCard">
       <div class="a-k">PROCTOR AUDIT</div>
@@ -268,9 +295,23 @@
   <div class="nb-hint" id="nbHint">PASS LEFT OR RIGHT</div>
 
   <div class="controls" id="qControls">
-    <div class="ctl strike dis" id="qBtnStrike"><span class="c-main">MISSILE</span><span class="c-sub" id="qStrikeN">0 READY</span></div>
+    <div class="ctl strike dis" id="qBtnStrike"><span class="c-main">MISSILE</span><span class="c-sub" id="qStrikeN">0 READY</span><span class="c-tip" id="qStrikeHint">EARN 3 CORRECT</span></div>
   </div>
 </section>
+
+<div class="install-prompt" id="installPrompt" role="status">
+  <div class="install-k">NEW AIRCRAFT PART</div>
+  <div class="install-n" id="installPartName">PART</div>
+  <div class="install-turn-wrap">
+    <div class="install-wheel" id="installWheel"><div class="install-wheel-core"></div></div>
+    <div class="install-turn-meta">
+      <div class="install-hint">ROTATE PORTRAIT → LANDSCAPE</div>
+      <div class="install-bar"><div class="install-bar-fill" id="installTurnFill"></div></div>
+      <div class="install-need mono" id="installTurnNeed">TURN 70° TO FIT</div>
+    </div>
+  </div>
+  <button class="btn ghost sm" onclick="installPartTap()">TAP TO INSTALL INSTEAD</button>
+</div>
 
 <!-- ========================== HANGAR ============================ -->
 <section class="screen wait" id="s-hangar">
@@ -286,7 +327,6 @@
 <section class="screen fight" id="s-fight">
   <div class="f-top">
     <div class="f-stat"><div class="v" id="fKills">0</div><div class="k">KILLS</div></div>
-    <div class="f-stat"><div class="v" id="fMissiles">0</div><div class="k">MISSILES</div></div>
     <div class="f-spacer"></div>
     <div class="f-stat" style="align-items:flex-end"><div class="v" id="fClock">1:15</div><div class="k">LEFT</div></div>
   </div>
@@ -298,9 +338,20 @@
     <!-- artificial horizon: shows bank and throttle so the controls are legible -->
     <div class="horizon" id="fHorizon">
       <div class="hz-sky" id="hzSky"></div>
+      <div class="hz-radar"><canvas id="fMinimap" class="minimap"></canvas></div>
+      <div class="hz-warning" id="hzWarning"></div>
+      <div class="hz-fx" id="hzFx" aria-hidden="true"></div>
       <div class="hz-jet">
-        <div class="hz-wing"></div>
-        <div class="hz-dot"></div>
+        <div class="hz-jet-glow" id="hzJetGlow"></div>
+        <div class="hz-fighter">
+          <div class="hz-tail-fin"></div>
+          <div class="hz-body"></div>
+          <div class="hz-canopy"></div>
+          <div class="hz-wing hz-wing-l"></div>
+          <div class="hz-wing hz-wing-r"></div>
+          <div class="hz-tail hz-tail-l"></div>
+          <div class="hz-tail hz-tail-r"></div>
+        </div>
       </div>
       <div class="hz-label hz-l">◀ BANK</div>
       <div class="hz-label hz-r">BANK ▶</div>
@@ -313,8 +364,7 @@
       <span class="th-v mono" id="fThrottleV">50%</span>
     </div>
 
-    <div class="f-bottom">
-      <canvas id="fMinimap" class="minimap"></canvas>
+    <div class="f-bottom solo">
       <div class="f-status" id="fStatus"></div>
     </div>
   </div>
@@ -322,9 +372,6 @@
   <div class="f-controls">
     <div class="f-btn guns" id="fGuns">
       <span class="fb-main">GUNS</span><span class="fb-sub">HOLD</span>
-    </div>
-    <div class="f-btn msl" id="fMissile">
-      <span class="fb-main">MISSILE</span><span class="fb-sub" id="fMslCount">0 LEFT</span>
     </div>
   </div>
 
@@ -363,6 +410,7 @@
     <div class="eyebrow" style="color:var(--violet)">ANALYST INTEL · ±3 ERROR</div>
     <div id="analystRows" style="margin-top:13px;display:flex;flex-direction:column;gap:9px"></div>
   </div>
+  <div class="part-roster" id="discussionParts"></div>
   <div class="card" id="tradePanel" style="display:none;margin-top:22px;padding:20px;width:100%;max-width:340px;text-align:left"></div>
   <div class="mono" id="discussClock" style="font-size:38px;font-weight:800;margin-top:28px">0:45</div>
 </section>

@@ -227,3 +227,26 @@ static/
 - **Free Render instances sleep.** First visitor waits ~50 seconds.
 - Phones that lock mid-game reconnect and keep their pilot, but miss whatever
   happened while the screen was off.
+
+## Grok AI trivia and study banks
+
+See `GROK_SETUP.txt` for setup. Enter your xAI API key in the root `.env` as `XAI_API_KEY=...`, or set it in Render's environment. Trivia generates questions from a topic, and Study generates questions from the extractable text in an uploaded lecture PDF (max 8 MB). The host selects 10, 20, 30, 50, 75 or 100 questions. Generated answer keys stay server-side. Progress appears on the host screen.
+
+### Scanned/image-based lecture PDF support
+Study mode supports both text PDFs and image-only slide PDFs. When no selectable text
+is available, the server renders up to 35 PDF pages and sends the images securely
+to Grok vision to make source-grounded notes before generating quiz questions.
+Requires PyMuPDF (automatically installed by the Windows launcher). Vision
+requests may take longer and use more xAI API tokens than text-only PDFs.
+
+### AI provider choice and usage optimization
+In the host's question-bank panel, choose **Grok** or **Gemini** and a count (10, 20, 30, 50, 75, 100). Both providers generate the entire bank in **one API request**, with no second model validation or separate scanned-PDF transcription call. A minimal local check confirms four choices and a correct-answer index. The previous bank is preserved if a request fails.
+
+Set the keys in `.env` (do not commit them):
+```
+XAI_API_KEY=PASTE_YOUR_GROK_KEY_HERE
+XAI_MODEL=grok-4.7
+GEMINI_API_KEY=PASTE_YOUR_GEMINI_KEY_HERE
+GEMINI_MODEL=gemini-2.5-flash
+```
+You only need the key for the provider selected. For scanned lecture PDFs, images are resized and JPEG-compressed and sent directly with the question request; searchable PDFs use text extraction instead. Larger banks and scanned PDFs still inherently consume more tokens. Generation progress stays at zero until the single response arrives, then updates to the completed count. Model access, pricing, response size limits and output quality depend on your API account and selected model.

@@ -188,6 +188,7 @@ class Dogfight:
         j.firing = bool(firing)
 
     def fire_missile(self, pid: str, now: float) -> bool:
+        return False  # missiles are quiz-only
         j = self.jets.get(pid)
         if not j or not j.alive or j.missiles_left <= 0:
             return False
@@ -275,10 +276,31 @@ class Dogfight:
             return
         j.last_shot = now
         spread = j.stats["spread"]
-        a = math.radians(j.heading + random.uniform(-spread, spread))
+
+        aim = j.heading
+        best_d = None
+        for t in self.jets.values():
+            if t.pid == j.pid or not t.alive:
+                continue
+            dx = t.x - j.x
+            dy = t.y - j.y
+            dist = math.hypot(dx, dy)
+            if dist > 300:
+                continue
+            bearing = math.degrees(math.atan2(dy, dx))
+            diff = ang_diff(j.heading, bearing)
+            if abs(diff) > 18:
+                continue
+            if best_d is None or dist < best_d:
+                best_d = dist
+                aim = j.heading + diff * 0.7
+
+        shot_spread = spread * (0.65 if best_d is not None else 1.0)
+        a = math.radians(aim + random.uniform(-shot_spread, shot_spread))
+        nose = math.radians(aim)
         self.bullets.append(Bullet(
-            x=j.x + math.cos(math.radians(j.heading)) * 18,
-            y=j.y + math.sin(math.radians(j.heading)) * 18,
+            x=j.x + math.cos(nose) * 18,
+            y=j.y + math.sin(nose) * 18,
             vx=math.cos(a) * BULLET_SPEED,
             vy=math.sin(a) * BULLET_SPEED,
             owner=j.pid, dmg=j.stats["bulletDmg"], born=now,
@@ -291,7 +313,7 @@ class Dogfight:
                 continue
             b.x = wrap(b.x + b.vx * TICK, ARENA_W)
             b.y = wrap(b.y + b.vy * TICK, ARENA_H)
-            if not self._impact(b.x, b.y, 15, b.owner, b.dmg, now, "guns"):
+            if not self._impact(b.x, b.y, 24, b.owner, b.dmg, now, "guns"):
                 alive.append(b)
         self.bullets = alive
 
@@ -325,7 +347,7 @@ class Dogfight:
                     shooter.damage_done += dmg
                 self.events.append({
                     "kind": "hit", "x": round(x), "y": round(y),
-                    "weapon": weapon, "pid": j.pid,
+                    "weapon": weapon, "pid": j.pid, "shooterPid": owner,
                 })
                 if j.hp <= 0:
                     self._down(j, shooter, now, weapon)

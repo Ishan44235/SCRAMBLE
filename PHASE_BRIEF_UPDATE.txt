@@ -1,0 +1,17 @@
+SCRAMBLE - Phase Gesture Briefings
+
+Added a clean retro-arcade instruction screen on connected phones before each quiz round, discussion, threat vote and dogfight.
+- Shows only controls relevant to the upcoming phase.
+- Displays a visible countdown from 10 seconds.
+- Each connected active player can press READY once.
+- The phase begins early when every connected active human player has pressed READY.
+- Otherwise the phase begins after 10 seconds. Bots do not block readiness.
+- Repeated rounds show the quiz briefing again. The existing role reveal is preserved.
+
+Visual/gameplay simplification suggestions (NOT automatically applied):
+- Reduce cards drawn per round and narrow the available power-up pool.
+- Simplify hidden role objectives.
+- Limit or combine surprise minigame interruptions.
+- Keep the phone dogfight HUD focused on health, radar, enemies and weapons.
+
+The current game's scoring, roles, cards, and dogfighting mechanics have not been removed.

@@ -1,0 +1,12 @@
+Three-axis motion and dogfight update
+
+- Calibration screen now shows three matching retro arcade live bars:
+  gamma (bank/left-right), beta (pitch/forward-back), and alpha (rotation).
+- Each bar displays a degree reading or NO DATA when the phone sensor is unavailable.
+- Set Neutral also resets the alpha/heading reference.
+- Dogfight steering is updated whenever a fight is active, regardless of a delayed phase message.
+- If sensor readings stop, steering is centered instead of remaining stuck at the last bank angle.
+- All existing game screens, host arena, cockpit enemy markers, and tunnel launcher retained.
+
+Test on actual phone through HTTPS (START-TUNNEL.bat); browser/device permission and
+orientation API behavior varies by device. An actual hardware flight test was not run.

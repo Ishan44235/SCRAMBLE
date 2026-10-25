@@ -1,0 +1,11 @@
+Cockpit art refresh
+
+- User dogfight view now shows a larger, clearer rear-view fighter jet.
+- Added more pixelated sky and terrain styling in the cockpit background.
+- Improved enemy jet marker art on the user cockpit view.
+- Replaced side arrows with triangle indicators that grow when closer and shrink when farther.
+
+Validation
+- JavaScript syntax checks passed.
+- Python compile checks passed.
+- Automated tests: 12 passed.

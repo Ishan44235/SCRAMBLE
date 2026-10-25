@@ -27,7 +27,10 @@ const STATE = {
   aimMode: 'pass',
   ring: [],
   mustPass: 0,
-  avatar: localStorage.getItem('tc_avatar') || 'fox',
+  avatar: (localStorage.getItem('tc_avatar') === 'cat' ? 'bibble' : localStorage.getItem('tc_avatar')) || 'fox',
+  rerollsLeft: 2,
+  pendingInstall: null,
+  passesUsed: 0,
 };
 
 let ws = null, motion = new Motion();
@@ -95,6 +98,8 @@ function handle(m) {
 
     case 'state': {
       STATE.roster = m.players;
+      const mine = (m.players || []).find(p => p.pid === STATE.pid);
+      if (mine) { STATE.passesUsed = mine.passesMade || 0; updatePassLabel(); }
       if (m.ring) { STATE.ring = m.ring; renderNeighbours(); }
       STATE.round = m.round || 1;
       STATE.rounds = m.rounds;
@@ -109,6 +114,7 @@ function handle(m) {
       }
 
       $('lobbyCount').textContent = m.players.length + ' player' + (m.players.length === 1 ? '' : 's');
+      if (m.phase === 'lobby') renderPlayerLobbyBoard(m.leaderboard && m.leaderboard.length ? m.leaderboard : m.players);
       $('qRound').textContent = `${STATE.round}/${STATE.rounds}`;
 
       if (m.phase === 'lobby' && prev !== 'lobby') show('s-lobby');
@@ -118,12 +124,29 @@ function handle(m) {
       }
       if (m.phase === 'discussion' && prev !== 'discussion') {
         show('s-discuss');
+        renderDiscussionParts();
         buildTradePanel();
       }
       if (m.phase === 'vote' && prev !== 'vote') buildVote();
       if (m.phase === 'results') showResults(m);
       break;
     }
+
+    case 'phase_brief':
+      showPhaseBrief(m);
+      break;
+
+    case 'phase_ready_count':
+      if (m.briefId === BRIEF.id)
+        $('briefReadyCount').textContent = `${m.ready} / ${m.total} PILOTS READY`;
+      break;
+
+    case 'phase_brief_end':
+      if (m.briefId === BRIEF.id) {
+        BRIEF.id = null;
+        clearInterval(BRIEF.timer);
+      }
+      break;
 
     case 'call':
       show('s-call');
@@ -136,6 +159,10 @@ function handle(m) {
       break;
 
     case 'round_start':
+      STATE.rerollsLeft = 2;
+      STATE.pendingInstall = null;
+      installStop();
+      hideInstallPrompt();
       startRound();
       break;
 
@@ -156,8 +183,9 @@ function handle(m) {
     case 'strike_ready':
       STATE.strikes = m.n;
       $('qStrikeN').textContent = m.n + ' READY';
+      $('qStrikeHint').textContent = m.n > 0 ? 'PUSH PHONE FORWARD' : 'EARN 3 CORRECT';
       $('qBtnStrike').classList.toggle('dis', m.n <= 0);
-      if (m.n > 0) { toast('MISSILE EARNED — 3 IN A ROW', 'good'); haptic(30); }
+      if (m.n > 0) { toast('MISSILE EARNED — PUSH PHONE FORWARD', 'good'); haptic(30); }
       break;
 
     case 'hot':
@@ -174,6 +202,23 @@ function handle(m) {
 
     case 'minigame_over':
       mgOver(m);
+      break;
+
+    case 'part_pending':
+      STATE.pendingInstall = m.token;
+      showInstallPrompt(m.part);
+      installStart();
+      break;
+
+    case 'part_installed':
+      if (STATE.pendingInstall === m.token) STATE.pendingInstall = null;
+      installGlow();
+      setTimeout(() => { installStop(); hideInstallPrompt(); }, 850);
+      break;
+
+    case 'reroll_used':
+      STATE.rerollsLeft = m.left;
+      toast('REROLL USED · ' + m.left + ' LEFT', 'good');
       break;
 
     case 'part':
@@ -275,12 +320,17 @@ function handle(m) {
       cleanupMatchNavigation();
       STATE.lobbyOnly = false;
       STATE.role = null;
+      STATE.pendingInstall = null;
+      hideInstallPrompt();
       STATE.voteTarget = null;
       show('s-lobby');
       toast('BACK IN THE LOBBY', 'good');
       break;
 
     case 'player_lobby':
+      renderPlayerLobbyBoard(m.leaderboard && m.leaderboard.length ? m.leaderboard : m.players);
+      STATE.pendingInstall = null;
+      hideInstallPrompt();
       playerExitPending = false;
       cleanupMatchNavigation();
       STATE.lobbyOnly = true;
@@ -291,6 +341,103 @@ function handle(m) {
     case 'toast':
       toast(m.text, m.kind);
       break;
+  }
+}
+
+const BRIEF = { id: null, timer: null, deadline: 0 };
+const INSTALL = { active: false, progress: 0, base: null, sent: false };
+const BRIEF_INFO = {
+  quiz: ['ANSWER · PASS · BUILD',
+    ['TAP to answer · SHAKE to reroll (2 per round)',
+     'SLIDE LEFT / RIGHT to pass a question',
+     'ROTATE to install parts · PUSH FORWARD to fire a missile']],
+  discussion: ['DISCUSS',
+    ['Talk with the other pilots', 'Compare who passed to whom',
+     'Keep the phone upright; no gestures required']],
+  vote: ['VOTE',
+    ['TAP a pilot to mark the threat', 'No phone motion needed for voting']],
+  dogfight: ['DOGFIGHT',
+    ['BANK phone LEFT / RIGHT to steer', 'TILT forward / back for throttle',
+     'HOLD GUNS to fire · TILT phone to steer']]
+};
+function showPhaseBrief(m) {
+  BRIEF.id = m.briefId;
+  BRIEF.deadline = performance.now() + m.seconds * 1000;
+  const info = BRIEF_INFO[m.stage] || BRIEF_INFO.quiz;
+  $('briefTitle').textContent = info[0];
+  $('briefControls').innerHTML = '';
+  info[1].forEach((line, i) => {
+    const el = document.createElement('div');
+    el.className = 'brief-line';
+    const num = document.createElement('span');
+    num.className = 'brief-num'; num.textContent = String(i + 1).padStart(2, '0');
+    const label = document.createElement('span');
+    label.textContent = line;
+    el.append(num, label);
+    $('briefControls').appendChild(el);
+  });
+  $('briefReadyCount').textContent = 'WAITING FOR PILOTS';
+  const btn = $('briefReadyBtn');
+  btn.disabled = false;
+  btn.textContent = 'READY';
+  btn.onclick = () => {
+    if (btn.disabled || BRIEF.id !== m.briefId) return;
+    btn.disabled = true;
+    btn.textContent = 'READY ✓';
+    send({ t: 'brief_ready', briefId: m.briefId });
+  };
+  clearInterval(BRIEF.timer);
+  function tick() {
+    $('briefClock').textContent = Math.ceil(Math.max(0,
+      (BRIEF.deadline - performance.now()) / 1000));
+  }
+  tick();
+  BRIEF.timer = setInterval(tick, 100);
+  show('s-phase-brief');
+}
+
+function installRender() {
+  const pct = Math.min(1, INSTALL.progress / 70);
+  $('installTurnFill').style.width = Math.round(pct * 100) + '%';
+  $('installTurnNeed').textContent = INSTALL.sent ? 'FITTING…' :
+    `TURN ${Math.max(0, Math.ceil(70 - INSTALL.progress))}° TO FIT`;
+  $('installWheel').style.transform = `rotate(${Math.round(INSTALL.progress)}deg)`;
+}
+function installStart() {
+  INSTALL.active = true;
+  INSTALL.sent = false;
+  INSTALL.progress = 0;
+  INSTALL.base = null;
+  $('installPrompt').classList.remove('fitted');
+  installRender();
+}
+function installStop() {
+  INSTALL.active = false;
+  INSTALL.sent = false;
+  INSTALL.progress = 0;
+  INSTALL.base = null;
+}
+function installGlow() {
+  $('installTurnFill').style.width = '100%';
+  $('installTurnNeed').textContent = 'PART FITTED!';
+  $('installPrompt').classList.add('fitted');
+}
+function installOrientation(e) {
+  if (!INSTALL.active || INSTALL.sent || STATE.pendingInstall == null) return;
+  if (!Number.isFinite(e.gamma) || !Number.isFinite(e.beta)) return;
+  // The prompt starts while the phone is upright. Compare its angle to
+  // the original portrait orientation rather than accumulating rotation rate.
+  if (INSTALL.base === null) INSTALL.base = {g: e.gamma, b: e.beta};
+  const g = Math.abs(e.gamma - INSTALL.base.g);
+  const b = Math.abs(e.beta - INSTALL.base.b);
+  INSTALL.progress = Math.min(70, Math.max(g, b));
+  installRender();
+  if (INSTALL.progress >= 70) {
+    INSTALL.progress = 70;
+    INSTALL.sent = true;
+    installRender();
+    send({t:'install_part',token:STATE.pendingInstall});
+    haptic([25,40,25]);
   }
 }
 
@@ -354,7 +501,7 @@ function startLoop() {
 }
 
 function loop() {
-  if (STATE.phase === 'fight' && FIGHT.on) fightTick();
+  if (FIGHT.on) fightTick();
   const now = performance.now();
   const dt = Math.min(60, now - lastT);
   lastT = now;
@@ -417,6 +564,20 @@ function updateTiltMeter(needleId = 'tbNeedle') {
   n.className = 'tb-needle' + (Math.abs(t) >= 8 ? ' active' : '');
 }
 
+function updateAxisMeter(needleId, valueId, degrees) {
+  const needle = $(needleId);
+  if (!needle) return;
+  if (!motion.live || !Number.isFinite(degrees)) {
+    needle.style.left = '50%';
+    needle.className = 'tb-needle dead';
+    $(valueId).textContent = 'NO DATA';
+    return;
+  }
+  needle.style.left = (50 + Math.max(-50, Math.min(50, degrees * 1.7))) + '%';
+  needle.className = 'tb-needle' + (Math.abs(degrees) >= 8 ? ' active' : '');
+  $(valueId).textContent = degrees.toFixed(0) + '°';
+}
+
 /* ---------------------------------------------------------- controls */
 /* The motion-permission warning is the only shared control left; everything
    else lives in the quiz or the dogfight. */
@@ -433,6 +594,22 @@ function wireMotionWarn() {
 }
 
 /* ---------------------------------------------------------- quiz input */
+function updatePassLabel() {
+  const hint = $('nbHint');
+  if (hint) hint.textContent = STATE.passesUsed >= 3 ? 'PASS LIMIT REACHED (3/3)' : `PASS LEFT / RIGHT · ${3 - STATE.passesUsed} LEFT`;
+}
+function canPass() {
+  if (STATE.passesUsed >= 3) { toast('3 QUESTION PASSES USED', 'warn'); return false; }
+  return true;
+}
+
+function launchQuizMissile() {
+  if (STATE.phase !== 'round' || STATE.strikes <= 0 || MG.active || STATE.aiming) return;
+  send({ t: 'strike' });
+  toast('MISSILE REQUESTED', 'good');
+  haptic([35, 45, 35]);
+}
+
 function wireQuizControls() {
   const tap = (el, fn) => {
     if (!el) return;
@@ -445,9 +622,7 @@ function wireQuizControls() {
   });
 
   tap($('qBtnPass'), () => openAim('pass'));
-  tap($('qBtnStrike'), () => {
-    if (STATE.strikes > 0) openAim('strike');
-  });
+  tap($('qBtnStrike'), () => launchQuizMissile());
 
   wireMotionWarn();
 
@@ -455,10 +630,19 @@ function wireQuizControls() {
   motion.on.move = null;
   motion.on.drop = null;
   motion.on.rotate = null;
-  motion.on.flick = null;
-  motion.on.shake = null;
+  motion.on.installOrientation = installOrientation;
+  motion.on.flick = () => launchQuizMissile();
+  motion.on.shake = () => {
+    if (STATE.phase !== 'round' || STATE.aiming || !QUIZ.inst || QUIZ.locked || MG.active) return;
+    if (STATE.rerollsLeft <= 0) { toast('NO REROLLS LEFT', 'warn'); return; }
+    QUIZ.locked = true;
+    send({ t: 'reroll', inst: QUIZ.inst });
+    toast('REROLL REQUESTED', 'good');
+    haptic([25, 45, 25]);
+  };
   motion.on.lateral = dir => {
     if (STATE.phase !== 'round' || STATE.aiming || !QUIZ.inst || QUIZ.locked || MG.active) return;
+    if (!canPass()) return;
     if (STATE.noPass) { toast('LOCKED BAY — CAN\'T PASS', 'bad'); return; }
     const seat = myRingSeat();
     if (!seat || !seat[dir]) return;
@@ -542,6 +726,7 @@ function disarmShove() {
 function openAim(mode) {
   STATE.aimMode = mode || 'pass';
   if (STATE.aimMode === 'pass' && (QUIZ.inst === null || QUIZ.locked)) return;
+  if (STATE.aimMode === 'pass' && !canPass()) return;
   if (STATE.aimMode === 'hot' && HOT.shoving == null) return;
   if (STATE.aimMode === 'pass' && STATE.noPass) {
     toast('LOCKED BAY — CAN\'T PASS', 'bad'); return;
@@ -625,6 +810,7 @@ function doPass(pid) {
     STATE.mustPass--;
     if (STATE.mustPass === 0) toast('HOT HANDS SPENT', 'good');
   }
+  if (!canPass()) return;
   send({ t: 'pass', targetPid: pid });
   closeAim();
   haptic(35);
@@ -727,6 +913,23 @@ function paintAnalyst(rows) {
 }
 
 /* ---------------------------------------------------------- vote */
+function playerPartSummary(p) {
+  const parts = p.loadout && p.loadout.parts || {};
+  const labels = { engine: 'ENG', wings: 'WING', armor: 'ARM', guns: 'GUN', missiles: 'RACK' };
+  return Object.entries(parts).filter(([s, v]) => !!v).map(([s, v]) =>
+    `${labels[s] || s.toUpperCase()}: ${v.name || 'FITTED'}`).join(' · ') || 'NO PARTS';
+}
+
+function renderDiscussionParts() {
+  const el = $('discussionParts');
+  if (!el) return;
+  el.innerHTML = '<div class="eyebrow">AIRCRAFT LOADOUTS</div>' +
+    STATE.roster.map(p => `<div class="pr-entry"><b>${escapePartText(p.name)}</b><span>${escapePartText(playerPartSummary(p))}</span></div>`).join('');
+}
+function escapePartText(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
 function buildVote(players, kind) {
   const threat = (kind || STATE.voteKind) === 'threat';
   STATE.voteKind = kind || STATE.voteKind;
@@ -745,7 +948,7 @@ function buildVote(players, kind) {
     row.innerHTML = `
       ${avatarSVG(p.avatar || 'fox', 38, { bg: '#0b0d14' })}
       <span class="vr-name">${p.name}</span>
-      <span class="vr-meta">${p.lines} lines</span>`;
+      <span class="vr-meta">${p.lines || p.score || 0} points<br><small>${escapePartText(playerPartSummary(p))}</small></span>`;
     row.onclick = () => {
       STATE.voteTarget = p.pid;
       document.querySelectorAll('.vote-row').forEach(r => r.classList.remove('sel'));
@@ -773,6 +976,18 @@ function showResults(m) {
 
 /* ---------------------------------------------------------- boot */
 /* ---------------------------------------------------------- avatars */
+function renderPlayerLobbyBoard(players) {
+  const el = $('playerLobbyRanks');
+  if (!el) return;
+  const sorted = [...(players || [])].sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+  el.innerHTML = sorted.length ? sorted.map((p, i) => `<div class="lobby-rank${p.pid === STATE.pid ? ' is-you' : ''}">
+    <span class="lobby-rank-no">${String(i + 1).padStart(2, '0')}</span>
+    ${avatarSVG(p.avatar || 'fox', 26, {bg: '#0b0d14'})}
+    <span class="lobby-rank-name"></span><span class="lobby-rank-pts">${Number(p.score) || 0} PTS</span>
+  </div>`).join('') : '<div class="lobby-board-empty">NO SCORES YET</div>';
+  el.querySelectorAll('.lobby-rank-name').forEach((name, i) => { name.textContent = sorted[i].name; });
+}
+
 function buildAvatarPicker() {
   const grid = $('avGrid');
   grid.innerHTML = AVATARS.map(a => `
@@ -848,9 +1063,13 @@ $('denyBtn').onclick = () => { connect(); show('s-lobby'); };
 let calibRAF = null, calibStart = 0;
 function calibLoop() {
   updateTiltMeter('calibNeedle');
+  updateAxisMeter('calibBetaNeedle', 'axisBetaValue', motion.pitchRel);
+  const yaw = ((motion.heading - motion.headingOffset + 540) % 360) - 180;
+  updateAxisMeter('calibAlphaNeedle', 'axisAlphaValue', yaw);
+  $('axisGammaValue').textContent = motion.live ? motion.tiltRel.toFixed(0) + '°' : 'NO DATA';
   if (motion.live) {
     $('calibStatus').textContent =
-      `TILT: ${motion.tiltRel.toFixed(0)}°  —  move the phone to test`;
+      'LIVE MOTION — MOVE THE PHONE TO TEST ALL THREE AXES';
     $('calibBtn').textContent = 'SET THIS AS NEUTRAL';
   } else {
     const secs = Math.round((performance.now() - calibStart) / 1000);

@@ -16,6 +16,8 @@ class Motion {
     this.eventCount = 0;
 
     this._tiltRaw = 0;
+    this.spinRate = 0;
+    this.installTurn = null;
     this._lastMoveAt = 0;
     this._lastRotAt = 0;
     this._lastFlickAt = 0;
@@ -98,6 +100,7 @@ class Motion {
   calibrateTilt() {
     this.tiltOffset = this.tilt;
     this.pitchOffset = this.pitch;
+    this.headingOffset = this.heading;
   }
 
   /** Left/right tilt relative to the calibrated neutral point. */
@@ -139,6 +142,7 @@ class Motion {
       this.heading = (360 - e.alpha) % 360;           // Android
     }
 
+    if (this.on.installOrientation) this.on.installOrientation(e);
     this.pollTilt();
   }
 
@@ -163,6 +167,7 @@ class Motion {
     const now = performance.now();
     this._motionCount = (this._motionCount || 0) + 1;
     const rr = e.rotationRate || {};
+    this.spinRate = this.spinRate * 0.75 + Math.abs(rr.alpha ?? 0) * 0.25;
 
     // Some devices fire devicemotion but never deviceorientation. Derive tilt
     // from gravity so the controls still work instead of sitting dead.
@@ -219,7 +224,7 @@ class Motion {
     // --- TWIST TO ROTATE -------------------------------------------------
     // rotationRate.alpha is spin about the screen-normal axis.
     const twist = Math.abs(rr.alpha ?? 0);
-    if (twist > 140 && now - this._lastRotAt > 300) {
+    if (twist > 95 && now - this._lastRotAt > 800) {
       this._lastRotAt = now;
       this.on.rotate && this.on.rotate();
     }
@@ -235,7 +240,7 @@ class Motion {
     // --- FLICK FORWARD TO PASS ------------------------------------------
     // Push the phone away from you: spike along Z.
     const az = acc.z ?? 0;
-    if (az > 10 && now - this._lastFlickAt > 400) {
+    if (az < -11 && now - this._lastFlickAt > 950) {
       this._lastFlickAt = now;
       this.on.flick && this.on.flick(this.relativeHeading());
     }

@@ -1,0 +1,7 @@
+SCRAMBLE update
+- Fit parts by physically rotating your phone from portrait toward landscape (90 degrees). Progress appears on the installation meter. No time-based auto-install; the existing tap fallback is still present.
+- Shooting a rival shows HIT CONFIRMED only when the game server registers damage.
+- Player names and current HP appear with cockpit enemy markers and above aircraft on the host arena.
+- Keeps the Bibble purple-haired avatar, throttle glow, leaderboard and START-TUNNEL.bat.
+
+Testing: 12 existing automated tests passed; JavaScript syntax checks and Python compilation passed. Actual phone rotation and multiplayer display should be verified on device.

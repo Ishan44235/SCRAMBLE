@@ -49,12 +49,13 @@ def pause():
 # ---------------------------------------------------------------- deps
 def ensure_deps():
     try:
-        import fastapi, uvicorn, qrcode  # noqa: F401
+        import fastapi, uvicorn, qrcode, multipart, dotenv, websockets  # noqa: F401
+        import pypdf, fitz  # noqa: F401
         return
     except ImportError:
         pass
 
-    say("  Installing dependencies (first run only)...")
+    say("  Installing missing dependencies...")
     req = os.path.join(HERE, "requirements.txt")
     cmd = [sys.executable, "-m", "pip", "install", "--quiet", "-r", req]
     try:
@@ -66,7 +67,8 @@ def ensure_deps():
         sys.exit(1)
 
     try:
-        import fastapi, uvicorn, qrcode  # noqa: F401
+        import fastapi, uvicorn, qrcode, multipart, dotenv, websockets  # noqa: F401
+        import pypdf, fitz  # noqa: F401
     except ImportError:
         say("  [X] Dependencies still missing after install.")
         sys.exit(1)

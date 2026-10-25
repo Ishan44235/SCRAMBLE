@@ -17,6 +17,8 @@ import json
 import math
 import os
 import random
+import secrets
+import hmac
 import socket
 import string
 import time
@@ -25,13 +27,15 @@ from typing import Dict, List, Optional
 
 import qrcode
 import uvicorn
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 import quiz as quizmod
 import parts as partsmod
 import dogfight as dogfightmod
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
 # ---------------------------------------------------------------------------
 # CONFIG
@@ -57,7 +61,7 @@ MIN_PLAYERS = 3
 SOLO_FILL_TO = 4
 BOT_NAMES = ["RIVAL", "GHOST", "NOMAD", "CIPHER", "ECHO", "VAGRANT"]
 
-AVATAR_IDS = ["fox", "cat", "frog", "bear", "panda",
+AVATAR_IDS = ["fox", "bibble", "frog", "bear", "panda",
               "owl", "penguin", "bunny", "axolotl", "shiba"]
 
 ROOM_IDLE_SECONDS = 60 * 60      # reap rooms nobody has touched in an hour
@@ -109,7 +113,7 @@ FEATHERWEIGHT_BONUS = 200
 FEATHERWEIGHT_MAX_SLOTS = 3
 THREAT_BOUNTY = 3
 
-STREAK_FOR_STRIKE = 3    # correct answers in a row earns a missile
+STREAK_FOR_STRIKE = 3    # every 3 correct answers this round earns a missile
 STREAK_FOR_RINGS = 3     # wrong answers in a row sends you through the rings
 RING_COOLDOWN = 40.0     # ...but no more than one ring run per this often
 
@@ -227,7 +231,7 @@ def resolve_settings(raw: Optional[dict]) -> Dict[str, int]:
             v = int(raw[key])
         except (KeyError, TypeError, ValueError):
             v = base[key]
-        out[key] = max(lo, min(hi, v))
+        out[key] = 0 if key == "powers_per_round" else max(lo, min(hi, v))
     return out
 
 
@@ -260,6 +264,7 @@ class Player:
     streak_ok: int = 0          # correct answers in a row
     streak_bad: int = 0         # wrong answers in a row
     strikes: int = 0            # missile strikes earned, unspent
+    round_correct: int = 0       # every 3 correct answers, regardless of streak
     minigame: str = ""          # "dodge" | "rings" while one is running
     last_rings: float = 0.0     # so the ring run cannot spam a cold player
     passes_made: int = 0
@@ -274,6 +279,9 @@ class Player:
     loadout: Optional["partsmod.Loadout"] = None
     crates: List[dict] = field(default_factory=list)
     tailwind: bool = False
+    rerolls_left: int = 2
+    pending_part: Optional[dict] = None
+    pending_token: int = 0
 
     def public(self) -> dict:
         return {
@@ -281,13 +289,15 @@ class Player:
             "correct": self.correct, "score": self.score,
             "alive": self.alive, "seat": self.seat,
             "connected": self.connected, "answered": self.answered,
-            "bot": self.is_bot,
+            "bot": self.is_bot, "passesMade": self.passes_made,
+            "loadout": (self.loadout or partsmod.Loadout()).public(),
         }
 
 
 @dataclass
 class Room:
     code: str
+    host_token: str = field(default_factory=lambda: secrets.token_urlsafe(24))
     phase: str = "lobby"
     round_no: int = 0
     players: Dict[str, Player] = field(default_factory=dict)
@@ -304,6 +314,18 @@ class Room:
     next_hot: int = 1
     task: Optional[asyncio.Task] = None
     touched: float = field(default_factory=time.time)
+    brief_id: int = 0
+    brief_ready: set = field(default_factory=set)
+    brief_active: bool = False
+    lobby_leaderboard: List[dict] = field(default_factory=list)
+    question_deck: Optional[dict] = None
+    question_mode: str = "default"
+    question_level: str = "medium"
+    generation_busy: bool = False
+    generation_error: str = ""
+    generation_count: int = 0
+    generation_stage: str = ""
+    generation_target: int = 100
 
     def s(self, key: str) -> int:
         return self.settings.get(key, _defaults()[key])
@@ -386,6 +408,12 @@ async def push_state(r: Room):
         "threat": r.threat,
         "reveal": r.reveal,
         "fightStandings": r.fight_standings,
+        "leaderboard": r.lobby_leaderboard if r.phase == "lobby" else [],
+        "questionBank": {"mode": r.question_mode, "level": r.question_level,
+                         "title": (r.question_deck or {}).get("title", "Built-in trivia"),
+                         "count": len((r.question_deck or quizmod.load_deck())["questions"]),
+                         "busy": r.generation_busy, "error": r.generation_error,
+                         "generated": r.generation_count, "target": r.generation_target, "stage": r.generation_stage},
     })
 
 
@@ -413,7 +441,22 @@ def add_bots(r: Room, target: int):
             connected=True, is_bot=True, avatar=random.choice(free))
 
 
+def capture_leaderboard(r: Room) -> List[dict]:
+    if r.fight_standings:
+        by_pid = {row["pid"]: row for row in r.fight_standings}
+        ranked = [{"pid": p.pid, "name": p.name, "avatar": p.avatar,
+                   "score": by_pid.get(p.pid, {}).get("final", p.score),
+                   "bot": p.is_bot} for p in r.players.values() if p.joined]
+    else:
+        ranked = [{"pid": p.pid, "name": p.name, "avatar": p.avatar,
+                   "score": p.score, "bot": p.is_bot}
+                  for p in r.players.values() if p.joined]
+    ranked.sort(key=lambda row: (-row["score"], row["name"].casefold()))
+    return ranked
+
+
 async def reset_to_lobby(r: Room):
+    r.lobby_leaderboard = capture_leaderboard(r)
     if r.task and not r.task.done():
         r.task.cancel()
     r.task = None
@@ -423,6 +466,9 @@ async def reset_to_lobby(r: Room):
         r.fight.missiles.clear()
     clear_bots(r)
     r.phase = "lobby"
+    r.brief_active = False
+    r.brief_ready.clear()
+    r.brief_id += 1
     r.round_no = 0
     r.phase_ends = 0
     r.votes.clear()
@@ -443,6 +489,7 @@ async def reset_to_lobby(r: Room):
         p.answered = False
         p.alive = True
         p.correct = p.score = 0
+        p.round_correct = 0
         p.passes_made = p.public_passes = p.passes_taken = 0
         p.stolen = []
         p.traded_with = ""
@@ -450,6 +497,8 @@ async def reset_to_lobby(r: Room):
         p.gave_to = {}
         p.active_power = None
         p.loadout = None
+        p.pending_part = None
+        p.pending_token += 1
         p.crates = []
 
     for pid in [p.pid for p in r.players.values()
@@ -483,6 +532,7 @@ async def start_game(r: Room, fill: bool = False,
         p.answered = p.is_bot
         p.alive = True
         p.correct = p.score = 0
+        p.round_correct = 0
         p.passes_made = p.public_passes = p.passes_taken = 0
         p.stolen = []
         p.traded_with = ""
@@ -498,7 +548,8 @@ async def start_game(r: Room, fill: bool = False,
         if others:
             duel.rival = random.choice(others).pid
 
-    r.quiz = quizmod.QuizEngine()
+    r.lobby_leaderboard = []
+    r.quiz = quizmod.QuizEngine(deck=r.question_deck)
     r.hot = {}
     r.next_hot = 1
     r.phase = "calling"
@@ -516,6 +567,17 @@ async def start_game(r: Room, fill: bool = False,
     r.task = asyncio.create_task(run_match(r))
 
 
+ROLE_GOALS = {
+    "magpie": "Finish with the rarest aircraft part.",
+    "duelist": "Shoot down your assigned rival for bonus points.",
+    "scavenger": "Shoot down rivals to claim their aircraft parts.",
+    "mechanic": "Force one aircraft-part swap during discussion.",
+    "inspector": "Inspect one player; score if they become the Threat.",
+    "quartermaster": "Earn points when players you passed to fit parts.",
+    "featherweight": "Finish with three or fewer aircraft parts for a bonus.",
+}
+
+
 async def deliver_agenda(r: Room, p: Player):
     if not p.agenda:
         return
@@ -523,7 +585,7 @@ async def deliver_agenda(r: Room, p: Player):
     payload = {
         "t": "role", "agenda": p.agenda, "role": p.agenda,
         "name": a["name"], "short": a["short"], "tagline": a["tagline"],
-        "goal": a["goal"], "color": a["color"],
+        "goal": ROLE_GOALS.get(p.agenda, a["goal"]), "color": a["color"],
     }
     if p.agenda == "duelist" and p.rival:
         tgt = r.players.get(p.rival)
@@ -536,6 +598,27 @@ async def deliver_agenda(r: Room, p: Player):
 # MATCH
 # ---------------------------------------------------------------------------
 
+async def phase_brief(r: Room, stage: str):
+    """Phase-specific instructions: 10 seconds max or every active human ready."""
+    r.brief_id += 1
+    sequence = r.brief_id
+    r.brief_active = True
+    r.brief_ready.clear()
+    deadline = time.monotonic() + 10
+    await broadcast(r, {"t": "phase_brief", "stage": stage,
+                        "briefId": sequence, "seconds": 10})
+    try:
+        while time.monotonic() < deadline:
+            active = {p.pid for p in r.humans() if p.ws and p.connected}
+            if active and active.issubset(r.brief_ready):
+                break
+            await asyncio.sleep(0.1)
+    finally:
+        if r.brief_id == sequence:
+            r.brief_active = False
+            await broadcast(r, {"t": "phase_brief_end", "briefId": sequence})
+
+
 async def run_match(r: Room):
     try:
         deadline = time.time() + 25
@@ -545,16 +628,21 @@ async def run_match(r: Room):
             await asyncio.sleep(0.3)
 
         r.phase = "roles"
-        r.phase_ends = time.time() + 8
+        r.phase_ends = time.time() + 11
         await push_state(r)
-        await asyncio.sleep(8)
+        await asyncio.sleep(11)
 
         for rd in range(1, r.s("rounds") + 1):
+            await phase_brief(r, "quiz")
             r.round_no = rd
             r.phase = "round"
             r.phase_ends = time.time() + r.s("round_seconds")
             for p in r.players.values():
                 p.alive = True
+                p.rerolls_left = 2
+                p.round_correct = 0
+                p.strikes = 0
+                await send(p.ws, {"t": "strike_ready", "n": 0})
             await push_state(r)
             await broadcast(r, {"t": "round_start", "round": rd})
 
@@ -565,7 +653,7 @@ async def run_match(r: Room):
 
             t_end = r.phase_ends
             t_start = time.time()
-            n_cards = r.s("powers_per_round")
+            n_cards = 0  # Power cards and handicaps disabled
             gap = (r.s("round_seconds") / n_cards) if n_cards else 0
             schedule = [t_start + gap * (i + 0.5) for i in range(n_cards)]
             drawn = 0
@@ -612,11 +700,13 @@ async def run_match(r: Room):
                                 "standings": standings})
             await asyncio.sleep(INTERMISSION_SECONDS)
 
+        await phase_brief(r, "discussion")
         r.phase = "discussion"
         r.phase_ends = time.time() + r.s("discussion_seconds")
         await push_state(r)
         await asyncio.sleep(r.s("discussion_seconds"))
 
+        await phase_brief(r, "vote")
         r.phase = "vote"
         r.phase_ends = time.time() + r.s("vote_seconds")
         r.votes.clear()
@@ -632,6 +722,7 @@ async def run_match(r: Room):
             await asyncio.sleep(0.3)
 
         await resolve_threat_vote(r)
+        await phase_brief(r, "dogfight")
         await run_dogfight(r)
 
         r.phase = "results"
@@ -685,7 +776,10 @@ async def bot_turn(r: Room):
     bots = [p for p in r.players.values() if p.is_bot and p.alive]
     if not bots or not r.quiz:
         return
-    sender = random.choice(bots)
+    available = [b for b in bots if b.passes_made < 3]
+    if not available:
+        return
+    sender = random.choice(available)
     target = neighbour(r, sender, random.choice(["left", "right"]))
     if target is None or target.pid == sender.pid:
         return
@@ -729,6 +823,7 @@ async def resolve_answer(r: Room, p: Player, choice: int,
     p.score += res["points"]
     if res["correct"]:
         p.correct += 1
+        p.round_correct += 1
         p.streak_ok += 1
         p.streak_bad = 0
     else:
@@ -747,7 +842,19 @@ async def resolve_answer(r: Room, p: Player, choice: int,
         if p.active_power and p.active_power.get("id") == "tailwind":
             p.active_power = None
 
-    award = p.loadout.award(partsmod.roll_part(heat)) if res["correct"] else None
+    rolled = partsmod.roll_part(heat) if res["correct"] else None
+    # Parts are installed only after a phone rotation (or the accessibility fallback).
+    award = None
+    if rolled:
+        if partsmod.better(rolled, p.loadout.parts[rolled["slot"]]):
+            # Replace a pending upgrade; never fit it without the player's action.
+            p.pending_token += 1
+            p.pending_part = rolled
+            token = p.pending_token
+            await send(p.ws, {"t": "part_pending", "token": token,
+                              "part": partsmod.public_part(rolled, rolled["slot"])})
+        else:
+            award = p.loadout.award(rolled)
 
     await send(p.ws, {"t": "answer_result", **res})
     if award:
@@ -784,8 +891,7 @@ async def resolve_answer(r: Room, p: Player, choice: int,
                 p.last_rings = time.time()
                 await start_minigame(r, p, "rings")
                 return
-        if p.streak_ok >= STREAK_FOR_STRIKE:
-            p.streak_ok = 0
+        if res["correct"] and p.round_correct % STREAK_FOR_STRIKE == 0:
             p.strikes += 1
             await send(p.ws, {"t": "strike_ready", "n": p.strikes})
 
@@ -793,6 +899,44 @@ async def resolve_answer(r: Room, p: Player, choice: int,
         was_queued = bool(r.quiz.queued.get(p.pid))
         inst = r.quiz.issue(p.pid)
         await send(p.ws, {"t": "question", **inst.public(), "passed": was_queued})
+
+
+
+async def install_pending_part(r: Room, p: Player, token=None):
+    if not p.pending_part or (token is not None and token != p.pending_token):
+        return
+    part = p.pending_part
+    p.pending_part = None
+    p.loadout = p.loadout or partsmod.Loadout()
+    award = p.loadout.award(part)
+    await send(p.ws, {"t": "part", **award, "loadout": p.loadout.public()})
+    await send(p.ws, {"t": "part_installed", "token": p.pending_token})
+    if award.get("fitted"):
+        await broadcast_hosts(r, {"t": "earn_fx", "pid": p.pid, "name": p.name,
+                                  "part": award["part"]["name"], "tier": award["part"]["tier"],
+                                  "slot": award["part"]["slot"], "upgrade": award.get("upgrade", False)})
+    else:
+        await spawn_hot(r, p, partsmod.hot_from_public(award["part"]))
+
+async def reroll_question(r: Room, p: Player, inst_id: int):
+    if r.phase != "round" or not r.quiz or p.rerolls_left <= 0 or p.minigame:
+        return
+    old = r.quiz.live.get(p.pid)
+    if not old or old.inst != inst_id or old.deadline <= time.time():
+        return
+    p.rerolls_left -= 1
+    r.quiz.live.pop(p.pid, None)
+    new_inst = r.quiz.make()
+    if len(r.quiz.deck["questions"]) > 1:
+        for _ in range(8):
+            if new_inst.qid != old.qid:
+                break
+            new_inst = r.quiz.make()
+        if new_inst.qid == old.qid:
+            new_inst = r.quiz.make((old.qid + 1) % len(r.quiz.deck["questions"]))
+    new = r.quiz.issue(p.pid, new_inst)
+    await send(p.ws, {"t": "reroll_used", "left": p.rerolls_left})
+    await send(p.ws, {"t": "question", **new.public()})
 
 
 # ---------------------------------------------------------------------------
@@ -952,27 +1096,27 @@ async def end_minigame(r: Room, p: Player, success: bool, kind: str):
 
 
 async def handle_strike(r: Room, p: Player, msg: dict):
-    """Spend an earned missile on somebody. They get a chance to dodge."""
-    if p.strikes <= 0 or r.phase != "round":
+    """Quiz-only missile: auto-pick an eligible random opponent."""
+    if p.strikes <= 0 or r.phase != "round" or p.minigame or not p.alive:
         return
-    target = r.players.get(msg.get("targetPid", ""))
-    if not target or target.pid == p.pid or not target.joined:
-        return
-    if target.minigame:
+    targets = [q for q in r.players.values()
+               if q.pid != p.pid and q.joined and q.alive
+               and not q.lobby_only and not q.minigame]
+    if not targets:
         await send(p.ws, {"t": "toast", "kind": "bad",
-                          "text": target.name + " IS ALREADY BUSY"})
+                          "text": "NO AVAILABLE TARGET"})
         return
+    target = random.choice(targets)
     p.strikes -= 1
     await send(p.ws, {"t": "strike_ready", "n": p.strikes})
     await send(p.ws, {"t": "toast", "kind": "good",
                       "text": "MISSILE AWAY → " + target.name})
+    await broadcast_hosts(r, {"t": "strike_fx", "from": p.name, "to": target.name})
     if target.is_bot:
-        # bots dodge about half the time, so firing at one is still a gamble
         await asyncio.sleep(1.2)
         await end_minigame(r, target, random.random() < 0.5, "dodge")
-        return
-    await start_minigame(r, target, "dodge", {"from": p.name})
-    await broadcast_hosts(r, {"t": "strike_fx", "from": p.name, "to": target.name})
+    else:
+        await start_minigame(r, target, "dodge", {"from": p.name})
 
 
 def ring(r: Room) -> List[Player]:
@@ -1033,6 +1177,10 @@ async def handle_pass(r: Room, sender: Player, msg: dict):
                                "text": "LOCKED BAY — CAN'T PASS"})
         return
 
+    if sender.passes_made >= 3:
+        await send(sender.ws, {"t": "toast", "kind": "warn", "text": "3 QUESTION PASSES USED"})
+        return
+
     direction = msg.get("dir")
     target = neighbour(r, sender, direction) if direction else \
         r.players.get(msg.get("targetPid", ""))
@@ -1063,6 +1211,7 @@ async def handle_pass(r: Room, sender: Player, msg: dict):
 
     nxt = r.quiz.issue(sender.pid)
     await send(sender.ws, {"t": "question", **nxt.public()})
+    await push_state(r)
 
     if not silent:
         await broadcast_hosts(r, {"t": "pass_fx", "fromPid": sender.pid,
@@ -1113,6 +1262,7 @@ async def handle_trade(r: Room, p: Player, msg: dict):
                           "gave": partsmod.public_part(theirs, mine_slot) if theirs else None,
                           "loadout": other.loadout.public()})
     await broadcast_hosts(r, {"t": "trade_fx", "from": p.name, "to": other.name})
+    await push_state(r)
 
 
 async def handle_inspect(r: Room, p: Player, msg: dict):
@@ -1256,7 +1406,8 @@ async def run_dogfight(r: Room):
                     blips = [{"p": j["pid"], "x": round(j["x"] / 16),
                               "y": round(j["y"] / 16),
                               "h": round(j["heading"] / 15),
-                              "a": 1 if j["alive"] else 0}
+                              "a": 1 if j["alive"] else 0,
+                              "n": j["name"], "hp": j["hp"], "maxHp": j["maxHp"]}
                              for j in snap["jets"]]
                     await send(p.ws, {"t": "fight_me", "me": me,
                                       "left": snap["left"],
@@ -1264,7 +1415,8 @@ async def run_dogfight(r: Room):
                                       "arena": snap["arena"],
                                       "events": [e for e in snap["events"]
                                                  if e.get("pid") == p.pid
-                                                 or e.get("victimPid") == p.pid]})
+                                                 or e.get("victimPid") == p.pid
+                                                 or e.get("shooterPid") == p.pid]})
         await asyncio.sleep(dt)
 
     standings = score_agendas(r, fight, fight.standings())
@@ -1445,7 +1597,7 @@ async def player_page():
 @app.post("/api/room")
 async def api_room(request: Request):
     r = create_room()
-    return JSONResponse({"code": r.code,
+    return JSONResponse({"code": r.code, "hostToken": r.host_token,
                          "join": base_url(request) + "/play?code=" + r.code})
 
 
@@ -1492,6 +1644,9 @@ async def ws_endpoint(ws: WebSocket):
                 if not room:
                     await send(ws, {"t": "join_error", "reason": "ROOM CLOSED"})
                     continue
+                if not hmac.compare_digest(str(msg.get("hostToken", "")), room.host_token):
+                    await send(ws, {"t": "join_error", "reason": "INVALID HOST LINK"})
+                    continue
                 is_host = True
                 room.hosts.append(ws)
                 room.touched = time.time()
@@ -1516,7 +1671,7 @@ async def ws_endpoint(ws: WebSocket):
                 me.connected = True
                 me.name = (msg.get("name") or "PILOT")[:14].upper()
                 av = str(msg.get("avatar") or "fox")[:16]
-                me.avatar = av if av in AVATAR_IDS else "fox"
+                me.avatar = ("bibble" if av == "cat" else av) if (av in AVATAR_IDS or av == "cat") else "fox"
                 me.joined = True
                 if room.phase == "lobby":
                     me.lobby_only = False
@@ -1559,7 +1714,8 @@ async def ws_endpoint(ws: WebSocket):
                         jet.alive = False
                         jet.firing = False
                     await send(ws, {"t": "player_lobby", "code": room.code,
-                                    "players": room.roster()})
+                                    "players": room.roster(),
+                                    "leaderboard": room.lobby_leaderboard or capture_leaderboard(room)})
                     await push_state(room)
                 continue
 
@@ -1567,6 +1723,15 @@ async def ws_endpoint(ws: WebSocket):
                 continue
 
             # ---- player messages -------------------------------------
+            if t == "brief_ready":
+                if room.brief_active and msg.get("briefId") == room.brief_id:
+                    room.brief_ready.add(me.pid)
+                    await broadcast(room, {"t": "phase_ready_count",
+                                           "briefId": room.brief_id,
+                                           "ready": len(room.brief_ready),
+                                           "total": len([p for p in room.humans()
+                                                         if p.ws and p.connected])})
+                continue
             if t == "answer":
                 me.answered = True
                 await deliver_agenda(room, me)
@@ -1578,6 +1743,14 @@ async def ws_endpoint(ws: WebSocket):
             elif t == "pass":
                 if room.phase == "round":
                     await handle_pass(room, me, msg)
+
+            elif t == "reroll":
+                if room.phase == "round":
+                    await reroll_question(room, me, int(msg.get("inst", -1)))
+
+            elif t == "install_part":
+                if room.phase != "lobby":
+                    await install_pending_part(room, me, int(msg.get("token", -1)))
 
             elif t == "quiz_answer":
                 if room.phase == "round":
@@ -1623,10 +1796,6 @@ async def ws_endpoint(ws: WebSocket):
                                        float(msg.get("throttle", 0.5)),
                                        bool(msg.get("fire", False)))
 
-            elif t == "missile":
-                if room.fight and room.fight.running:
-                    if room.fight.fire_missile(me.pid, time.time()):
-                        await send(ws, {"t": "missile_away"})
 
     except WebSocketDisconnect:
         pass
@@ -1644,6 +1813,71 @@ async def ws_endpoint(ws: WebSocket):
                     await push_state(room)
                 except Exception:
                     pass
+
+
+@app.post("/api/room/{code}/questions")
+async def generate_questions(code: str, request: Request, mode: str = Form(...), level: str = Form(...),
+                             topic: str = Form(""), count: int = Form(100), provider: str = Form("grok"), pdf: Optional[UploadFile] = File(None)):
+    room = ROOMS.get(code.upper())
+    if not room:
+        raise HTTPException(404, "Room not found")
+    if not hmac.compare_digest(request.headers.get('x-scramble-host-token', ''), room.host_token):
+        raise HTTPException(403, "Host authorization required")
+    if room.phase not in ("lobby", "results"):
+        raise HTTPException(409, "Question banks may only change in the lobby or after a dogfight")
+    if room.generation_busy:
+        raise HTTPException(409, "Already generating a question bank")
+    mode, level = mode.strip().lower(), level.strip().lower()
+    if mode not in ("trivia", "study") or level not in ("easy", "medium", "hard"):
+        raise HTTPException(400, "Invalid mode or difficulty")
+    if provider not in ("grok", "gemini"):
+        raise HTTPException(400, "Choose Grok or Gemini")
+    if count not in (10, 20, 30, 50, 75, 100):
+        raise HTTPException(400, "Choose 10, 20, 30, 50, 75, or 100 questions")
+    pdf_data = None
+    if mode == "study":
+        if not pdf or not pdf.filename.lower().endswith('.pdf'):
+            raise HTTPException(400, "Upload a PDF for study mode")
+        pdf_data = await pdf.read(8 * 1024 * 1024 + 1)
+        if len(pdf_data) > 8 * 1024 * 1024 or not pdf_data.startswith(b'%PDF-'):
+            raise HTTPException(400, "PDF must be valid and under 8 MB")
+    elif not topic.strip() or len(topic) > 180:
+        raise HTTPException(400, "Enter a topic (up to 180 characters)")
+    room.generation_busy = True
+    room.generation_error = ""
+    room.generation_count = 0
+    room.generation_target = count
+    room.generation_stage = f"Preparing {provider.title()} question bank"
+    await push_state(room)
+
+    async def do_generate():
+        try:
+            import grok_questions
+            loop = asyncio.get_running_loop()
+            def on_progress(count, stage):
+                def deliver():
+                    room.generation_count = count
+                    room.generation_stage = stage
+                    asyncio.create_task(push_state(room))
+                loop.call_soon_threadsafe(deliver)
+            deck = await asyncio.to_thread(grok_questions.generate_bank,
+                                           mode, level, topic, pdf_data, on_progress, count, provider)
+            room.generation_count = count
+            room.generation_stage = f"Completed — {count} questions ready"
+            if room.phase in ("lobby", "results"):
+                room.question_deck = deck
+                room.question_mode, room.question_level = mode, level
+            else:
+                room.generation_error = "Game began during generation; old bank was preserved"
+        except Exception as exc:
+            room.generation_error = str(exc)[:240]
+            room.generation_stage = "Generation failed"
+        finally:
+            room.generation_busy = False
+            await push_state(room)
+
+    asyncio.create_task(do_generate())
+    return {"ok": True, "status": "generating", "message": "Generation started; progress is shown in the host question bank panel."}
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
