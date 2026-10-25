@@ -29,7 +29,7 @@ from typing import Dict, List, Optional
 import qrcode
 import uvicorn
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, UploadFile, File, Form, HTTPException
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 import quiz as quizmod
@@ -1879,6 +1879,46 @@ def score_agendas(r: Room, fight, standings: List[dict]) -> List[dict]:
 app = FastAPI(title="SCRAMBLE")
 
 
+# ---------------------------------------------------------------------------
+# CACHE BUSTING
+#
+# Browsers and Render's CDN happily keep serving an old style.css or player.js
+# after a deploy, so a new page ends up styled by old CSS. Every page is sent
+# with its /static/... links stamped with that file's modification time
+# (style.css?v=1729866012): change a file and its URL changes with it.
+# ---------------------------------------------------------------------------
+
+import re as _re
+
+_ASSET_RE = _re.compile(r'(/static/[A-Za-z0-9_./-]+\.(?:css|js|png))(?![?\w])')
+
+
+def _asset_version(path: str) -> str:
+    try:
+        return str(int(os.path.getmtime(os.path.join(BASE_DIR, path.lstrip("/")))))
+    except OSError:
+        return "0"
+
+
+def page(name: str) -> HTMLResponse:
+    with open(os.path.join(STATIC_DIR, name), encoding="utf-8") as f:
+        html = f.read()
+    html = _ASSET_RE.sub(lambda m: f"{m.group(1)}?v={_asset_version(m.group(1))}", html)
+    # Pages themselves are never cached, so a deploy shows up on next load.
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
+
+
+@app.middleware("http")
+async def static_cache_headers(request: Request, call_next):
+    resp = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        # Versioned URLs may be cached hard; anything else must be revalidated.
+        resp.headers["Cache-Control"] = ("public, max-age=31536000, immutable"
+                                         if request.url.query.startswith("v=")
+                                         else "no-cache")
+    return resp
+
+
 def lan_ip() -> str:
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
@@ -1920,22 +1960,22 @@ def base_url(request) -> str:
 
 @app.get("/")
 async def home():
-    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+    return page("index.html")
 
 
 @app.get("/rules")
 async def rules_page():
-    return FileResponse(os.path.join(STATIC_DIR, "rules.html"))
+    return page("rules.html")
 
 
 @app.get("/host")
 async def host_page():
-    return FileResponse(os.path.join(STATIC_DIR, "host.html"))
+    return page("host.html")
 
 
 @app.get("/play")
 async def player_page():
-    return FileResponse(os.path.join(STATIC_DIR, "player.html"))
+    return page("player.html")
 
 
 @app.post("/api/room")
