@@ -243,6 +243,7 @@ class Player:
     connected: bool = True
     alive: bool = True
     is_bot: bool = False
+    in_lobby: bool = False
 
     agenda: str = ""
     rival: str = ""
@@ -277,7 +278,7 @@ class Player:
             "correct": self.correct, "score": self.score,
             "alive": self.alive, "seat": self.seat,
             "connected": self.connected, "answered": self.answered,
-            "bot": self.is_bot,
+            "bot": self.is_bot, "inLobby": self.in_lobby,
         }
 
 
@@ -413,6 +414,10 @@ async def reset_to_lobby(r: Room):
     if r.task and not r.task.done():
         r.task.cancel()
     r.task = None
+    if r.fight:
+        r.fight.running = False
+        r.fight.bullets.clear()
+        r.fight.missiles.clear()
     clear_bots(r)
     r.phase = "lobby"
     r.round_no = 0
@@ -427,6 +432,10 @@ async def reset_to_lobby(r: Room):
     r.next_hot = 1
 
     for p in r.players.values():
+        p.in_lobby = False
+        p.minigame = ""
+        p.strikes = 0
+        p.streak_bad = p.streak_ok = 0
         p.agenda = ""
         p.rival = ""
         p.answered = False
@@ -451,6 +460,8 @@ async def reset_to_lobby(r: Room):
 
 async def start_game(r: Room, fill: bool = False,
                      settings: Optional[dict] = None):
+    if r.phase not in ("lobby", "results") or (r.task and not r.task.done()):
+        return
     r.settings = resolve_settings(settings)
     clear_bots(r)
     if fill:
@@ -463,6 +474,7 @@ async def start_game(r: Room, fill: bool = False,
     ag = agendas_for(len(joined))
     random.shuffle(ag)
     for i, (p, a) in enumerate(zip(joined, ag)):
+        p.in_lobby = False
         p.agenda = a
         p.rival = ""
         p.answered = p.is_bot
@@ -486,7 +498,8 @@ async def start_game(r: Room, fill: bool = False,
     r.quiz = quizmod.QuizEngine()
     r.hot = {}
     r.next_hot = 1
-    r.phase = "calling"
+    r.phase = "countdown"
+    r.phase_ends = time.time() + 5
     r.round_no = 0
     r.votes.clear()
     r.threat = ""
@@ -495,9 +508,7 @@ async def start_game(r: Room, fill: bool = False,
     r.touched = time.time()
     await push_state(r)
 
-    for p in joined:
-        await send(p.ws, {"t": "call", "caller": "FLIGHT CONTROL"})
-
+    await broadcast(r, {"t": "countdown", "endsAt": r.phase_ends})
     r.task = asyncio.create_task(run_match(r))
 
 
@@ -523,12 +534,8 @@ async def deliver_agenda(r: Room, p: Player):
 
 async def run_match(r: Room):
     try:
-        deadline = time.time() + 25
-        while time.time() < deadline:
-            if all(p.answered for p in r.players.values() if p.joined):
-                break
-            await asyncio.sleep(0.3)
-
+        await asyncio.sleep(max(0, r.phase_ends - time.time()))
+        await broadcast(r, {"t": "countdown_go"})
         r.phase = "roles"
         r.phase_ends = time.time() + 8
         await push_state(r)
@@ -544,7 +551,7 @@ async def run_match(r: Room):
             await broadcast(r, {"t": "round_start", "round": rd})
 
             for p in r.alive_players():
-                if not p.is_bot:
+                if not p.is_bot and not p.in_lobby:
                     inst = r.quiz.issue(p.pid)
                     await send(p.ws, {"t": "question", **inst.public()})
 
@@ -624,7 +631,9 @@ async def run_match(r: Room):
         await push_state(r)
 
     except asyncio.CancelledError:
-        pass
+        if r.fight:
+            r.fight.running = False
+        return
     except Exception:
         import traceback
         print("!! match loop crashed:")
@@ -1417,11 +1426,6 @@ async def rules_page():
     return FileResponse("static/rules.html")
 
 
-@app.get("/rules")
-async def rules_page():
-    return FileResponse("static/rules.html")
-
-
 @app.get("/host")
 async def host_page():
     return FileResponse("static/host.html")
@@ -1477,18 +1481,23 @@ async def ws_endpoint(ws: WebSocket):
 
             # ---- joining a room --------------------------------------
             if t == "host_watch":
+                if me is not None or room is not None:
+                    continue
                 code = str(msg.get("code", "")).upper()
                 room = ROOMS.get(code)
                 if not room:
                     await send(ws, {"t": "join_error", "reason": "ROOM CLOSED"})
                     continue
                 is_host = True
-                room.hosts.append(ws)
+                if ws not in room.hosts:
+                    room.hosts.append(ws)
                 room.touched = time.time()
                 await push_state(room)
                 continue
 
             if t == "join":
+                if is_host or me is not None:
+                    continue
                 code = str(msg.get("code", "")).upper()
                 room = ROOMS.get(code)
                 if not room:
@@ -1504,6 +1513,7 @@ async def ws_endpoint(ws: WebSocket):
                 me = room.players.get(pid) or Player(pid=pid)
                 me.ws = ws
                 me.connected = True
+                me.in_lobby = room.phase not in ("lobby", "results") and me.in_lobby
                 me.name = (msg.get("name") or "PILOT")[:14].upper()
                 av = str(msg.get("avatar") or "fox")[:16]
                 me.avatar = av if av in AVATAR_IDS else "fox"
@@ -1513,6 +1523,8 @@ async def ws_endpoint(ws: WebSocket):
                 await send(ws, {"t": "joined", "pid": pid, "name": me.name,
                                 "code": room.code})
                 await push_state(room)
+                if me.in_lobby:
+                    await send(ws, {"t": "lobby_view", "code": room.code, "phase": room.phase, "players": room.roster()})
                 continue
 
             if room is None:
@@ -1521,16 +1533,40 @@ async def ws_endpoint(ws: WebSocket):
 
             # ---- host controls ---------------------------------------
             if t == "start":
-                if room.phase in ("lobby", "results"):
+                if is_host and room.phase in ("lobby", "results"):
                     await start_game(room, fill=bool(msg.get("fill")),
                                      settings=msg.get("settings"))
                 continue
 
             if t == "reset":
-                await reset_to_lobby(room)
+                if is_host:
+                    await reset_to_lobby(room)
+                else:
+                    await send(ws, {"t": "error", "reason": "HOST ONLY"})
                 continue
 
-            if me is None:
+            if t == "return_lobby":
+                if is_host:
+                    await reset_to_lobby(room)
+                elif me is not None:
+                    me.in_lobby = True
+                    me.minigame = ""
+                    me.strikes = 0
+                    if room.quiz:
+                        room.quiz.take(me.pid)
+                        room.quiz.queued.pop(me.pid, None)
+                    if room.fight and me.pid in room.fight.jets:
+                        jet = room.fight.jets[me.pid]
+                        jet.firing = False
+                        jet.alive = False
+                    for cid, crate in list(room.hot.items()):
+                        if crate["holder"] == me.pid:
+                            room.hot.pop(cid, None)
+                    await send(ws, {"t": "lobby_view", "code": room.code, "phase": room.phase, "players": room.roster()})
+                    await push_state(room)
+                continue
+
+            if me is None or me.in_lobby:
                 continue
 
             # ---- player messages -------------------------------------
@@ -1604,8 +1640,9 @@ async def ws_endpoint(ws: WebSocket):
             if is_host and ws in room.hosts:
                 room.hosts.remove(ws)
             if me:
-                me.connected = False
-                me.ws = None
+                if me.ws is ws:
+                    me.connected = False
+                    me.ws = None
                 try:
                     await push_state(room)
                 except Exception:
