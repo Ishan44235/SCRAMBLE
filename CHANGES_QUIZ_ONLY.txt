@@ -1,1 +1,0 @@
-Quiz-only missile: thrust phone forward; server chooses random available opponent; dodge minigame already displays incoming missile from top and jet near bottom. Dogfight missiles removed; guns retained. Discussion/vote loadouts exposed; flight controls recalibrated on fight start and updated on send timer. Test on a phone over HTTPS.

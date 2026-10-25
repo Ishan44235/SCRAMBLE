@@ -1,5 +1,0 @@
-Fix: server.py now resolves all HTML and /static assets relative to its own location, not the process working directory. Original UI HTML, CSS, and JavaScript are unchanged.
-
-Deploy the contents of this ZIP to your GitHub repository root (not the ZIP itself). Keep static/index.html, static/css/style.css and static/js/* inside static/. Push the changes and redeploy the Render web service. Render root directory must point at the folder containing server.py and render.yaml.
-
-Verified using FastAPI TestClient from an unrelated working directory: page HTML and CSS/JS routes return HTTP 200. External live Render site and browser appearance not verified.

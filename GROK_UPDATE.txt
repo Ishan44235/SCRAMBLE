@@ -1,9 +1,0 @@
-SCRAMBLE GROK UPDATE
-
-- Replaced Gemini with the xAI Grok Responses API (https://api.x.ai/v1/responses).
-- Host Trivia and Study tabs, difficulty/comfortability, selectable 10-100 question counts, and progress are preserved.
-- Study PDF text is extracted locally with pypdf, then sent to Grok. Scanned PDFs need OCR.
-- Secrets stay in server-side .env under XAI_API_KEY. Never include your real key in shared ZIPs.
-- No extra validation calls; only structural checks for four options and correct answer index.
-- If an API request fails, the previous question bank remains in use.
-- 16 automated tests passed; no real API call performed without a supplied key.

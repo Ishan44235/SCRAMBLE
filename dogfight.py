@@ -30,6 +30,18 @@ MISSILE_SPEED = 420.0
 MISSILE_LIFE = 5.0
 MISSILE_COOLDOWN = 1.6
 
+# Hitboxes, in arena units. A jet is drawn about 40 units across on the big
+# screen, so a bullet has to land inside roughly that to count. The old 24
+# was smaller than the sprite, and shots visibly passed through planes.
+BULLET_HIT_RADIUS = 38.0
+MISSILE_HIT_RADIUS = 44.0
+
+# Gun aim assist: a target this close and this near the nose pulls the burst
+# onto it. Phones steer by tilt, which is coarse, so this is what makes
+# gunnery feel fair rather than lucky.
+AIM_ASSIST_RANGE = 380.0
+AIM_ASSIST_CONE = 24.0
+
 # When a faulty part gives out, as a fraction of the fight.
 FAULT_WINDOW = (0.25, 0.70)
 
@@ -53,6 +65,21 @@ def wrap(v: float, hi: float) -> float:
 def ang_diff(a: float, b: float) -> float:
     """Smallest signed angle from a to b, in degrees."""
     return (b - a + 180.0) % 360.0 - 180.0
+
+
+def wrapped_dist(ax: float, ay: float, bx: float, by: float) -> float:
+    """
+    Distance across the arena's wrapping edges.
+
+    The arena is a torus — fly off the right and you come in on the left — so
+    a bullet just past the edge and a jet just inside the other edge are
+    neighbours. Plain hypot would call them a whole arena apart.
+    """
+    dx = abs(ax - bx)
+    dy = abs(ay - by)
+    dx = min(dx, ARENA_W - dx)
+    dy = min(dy, ARENA_H - dy)
+    return math.hypot(dx, dy)
 
 
 @dataclass
@@ -285,17 +312,17 @@ class Dogfight:
             dx = t.x - j.x
             dy = t.y - j.y
             dist = math.hypot(dx, dy)
-            if dist > 300:
+            if dist > AIM_ASSIST_RANGE:
                 continue
             bearing = math.degrees(math.atan2(dy, dx))
             diff = ang_diff(j.heading, bearing)
-            if abs(diff) > 18:
+            if abs(diff) > AIM_ASSIST_CONE:
                 continue
             if best_d is None or dist < best_d:
                 best_d = dist
-                aim = j.heading + diff * 0.7
+                aim = j.heading + diff * 0.75
 
-        shot_spread = spread * (0.65 if best_d is not None else 1.0)
+        shot_spread = spread * (0.6 if best_d is not None else 1.0)
         a = math.radians(aim + random.uniform(-shot_spread, shot_spread))
         nose = math.radians(aim)
         self.bullets.append(Bullet(
@@ -311,9 +338,17 @@ class Dogfight:
         for b in self.bullets:
             if now - b.born > BULLET_LIFE:
                 continue
-            b.x = wrap(b.x + b.vx * TICK, ARENA_W)
-            b.y = wrap(b.y + b.vy * TICK, ARENA_H)
-            if not self._impact(b.x, b.y, 24, b.owner, b.dmg, now, "guns"):
+            # Step in two halves so a fast bullet cannot skip clean over a
+            # jet between frames now that it covers ~20 units per tick.
+            hit = False
+            for _ in range(2):
+                b.x = wrap(b.x + b.vx * TICK / 2, ARENA_W)
+                b.y = wrap(b.y + b.vy * TICK / 2, ARENA_H)
+                if self._impact(b.x, b.y, BULLET_HIT_RADIUS, b.owner, b.dmg,
+                                now, "guns"):
+                    hit = True
+                    break
+            if not hit:
                 alive.append(b)
         self.bullets = alive
 
@@ -331,7 +366,8 @@ class Dogfight:
             rad = math.radians(m.heading)
             m.x = wrap(m.x + math.cos(rad) * m.speed * TICK, ARENA_W)
             m.y = wrap(m.y + math.sin(rad) * m.speed * TICK, ARENA_H)
-            if not self._impact(m.x, m.y, 26, m.owner, m.dmg, now, "missile"):
+            if not self._impact(m.x, m.y, MISSILE_HIT_RADIUS, m.owner, m.dmg,
+                                now, "missile"):
                 alive.append(m)
         self.missiles = alive
 
@@ -340,7 +376,7 @@ class Dogfight:
         for j in self.jets.values():
             if j.pid == owner or not j.alive:
                 continue
-            if math.hypot(j.x - x, j.y - y) <= radius:
+            if wrapped_dist(j.x, j.y, x, y) <= radius:
                 j.hp -= dmg
                 shooter = self.jets.get(owner)
                 if shooter:

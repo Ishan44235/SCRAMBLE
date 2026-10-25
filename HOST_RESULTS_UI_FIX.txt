@@ -1,7 +1,0 @@
-Host results / question generator UI fix
-
-- Question generation panel stays in the lobby and does not show on the Results screen.
-- Generator is editable only during the lobby phase; the previous bank remains intact.
-- Restyled Trivia/Study tabs, dropdowns, generate button, progress meter and status message
-  to match the rounded QR card theme with more consistent spacing.
-- Existing Grok/Gemini single-call generation, Study PDF support and gameplay preserved.

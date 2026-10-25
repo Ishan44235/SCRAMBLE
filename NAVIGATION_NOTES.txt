@@ -1,8 +1,0 @@
-SCRAMBLE mechanics-only update
-
-Original appearance preserved: style.css and all original HTML markup remain unchanged.
-Changed: server.py (host authorization, individual player return, session cleanup), host.html (existing logo/lobby control handlers only), player.js (return handler and cleanup only).
-
-Tests executed: python -m unittest -v test_nav_mechanics.py (3 passed); python -m py_compile server.py; node --check player.js.
-Limitations: The original player logo is only present on the join screen and is not visible during gameplay. An active-match player logo exit cannot be used without adding or repositioning visible UI. This change deliberately avoids modifying visual layout as requested. Countdown remains original behavior. No physical-phone or real browser verification performed.
-Run: pip install -r requirements.txt ; python server.py

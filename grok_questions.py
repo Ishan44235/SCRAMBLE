@@ -9,6 +9,30 @@ from urllib.error import HTTPError, URLError
 
 COUNTS = (10, 20, 30, 50, 75, 100)
 
+# Study mode asks how comfortable the class is with the material rather than
+# for a difficulty. The API still takes easy/medium/hard; these say what each
+# level means to the model, so a shaky class gets questions it can build
+# confidence on and a confident one gets pushed.
+STUDY_COMFORT = {
+    'easy': ('Shaky',
+             'The students are SHAKY on this material. Write straightforward recall '
+             'and recognition questions on the main ideas, key terms and definitions '
+             'stated directly in the source. One concept per question, plain wording, '
+             'no trick phrasing; wrong choices should be clearly wrong to someone who '
+             'has read the notes once.'),
+    'medium': ('Steady',
+               'The students are STEADY: they know the basics. Mix recall with '
+               'understanding: why and how questions, comparing related concepts, '
+               'picking the right idea for a situation, and applying a stated rule or '
+               'formula to a simple case. Wrong choices should be plausible.'),
+    'hard': ('Confident',
+             'The students are CONFIDENT with this material. Write challenging '
+             'application and analysis questions: multi-step reasoning, applying '
+             'concepts to new scenarios, edge cases, combining two ideas, and worked '
+             'calculations where the source supports it. Wrong choices should be the '
+             'common misconceptions and near-misses a confident student could fall for.'),
+}
+
 
 def extract_pdf_text(pdf_data):
     try:
@@ -120,8 +144,19 @@ def generate_bank(mode, level, topic=None, pdf_data=None, on_progress=None, coun
             source = 'Use ONLY the lecture notes below:\n' + notes
     else:
         source = 'Topic: ' + topic.strip()[:180]
+
+    # Study describes the class's comfort with the material; trivia keeps the
+    # plain difficulty word. Lower comfort -> easier questions.
+    if mode == 'study':
+        comfort_label, comfort_brief = STUDY_COMFORT[level]
+        lead = (f'Write exactly {count} distinct multiple-choice questions. '
+                f'{comfort_brief} ')
+    else:
+        comfort_label = level.capitalize()
+        lead = f'Write exactly {count} distinct {level} multiple-choice questions. '
+
     # Short keys keep generated response token usage lower without losing correctness.
-    prompt = (f'Write exactly {count} distinct {level} multiple-choice questions. '
+    prompt = (lead +
               'Use the source only for Study mode. Cover different source concepts; no repeats. '
               'Each must have 4 plausible choices and exactly one correct answer. '
               'Vary the answer position. Return ONLY a compact JSON array; schema: '
@@ -153,4 +188,4 @@ def generate_bank(mode, level, topic=None, pdf_data=None, on_progress=None, coun
     if on_progress:
         on_progress(count, f'{count} questions ready')
     return {'title': (topic.strip() if mode == 'trivia' else 'Study: Lecture Notes')[:100],
-            'description': f'{mode.capitalize()} · {level.capitalize()} · {provider.title()}', 'questions': questions}
+            'description': f'{mode.capitalize()} · {comfort_label} · {provider.title()}', 'questions': questions}

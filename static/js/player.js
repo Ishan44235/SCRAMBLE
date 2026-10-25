@@ -100,9 +100,14 @@ function handle(m) {
       STATE.roster = m.players;
       const mine = (m.players || []).find(p => p.pid === STATE.pid);
       if (mine) { STATE.passesUsed = mine.passesMade || 0; updatePassLabel(); }
-      if (m.ring) { STATE.ring = m.ring; renderNeighbours(); }
+      if (m.ring) {
+        const was = JSON.stringify((STATE.ring || []).map(x => [x.pid, x.left, x.right, x.name]));
+        STATE.ring = m.ring; renderNeighbours();
+        if (was !== JSON.stringify(m.ring.map(x => [x.pid, x.left, x.right, x.name]))) renderHot();
+      }
       STATE.round = m.round || 1;
       STATE.rounds = m.rounds;
+      STATE.arcade = !!m.arcade;
       const prev = STATE.phase;
       STATE.phase = STATE.lobbyOnly && m.phase !== 'lobby' ? 'lobby' : m.phase;
       if (STATE.lobbyOnly && m.phase !== 'lobby') { show('s-lobby'); break; }
@@ -159,6 +164,7 @@ function handle(m) {
       break;
 
     case 'round_start':
+      if (m.arcade !== undefined) STATE.arcade = !!m.arcade;
       STATE.rerollsLeft = 2;
       STATE.pendingInstall = null;
       installStop();
@@ -180,13 +186,19 @@ function handle(m) {
       quizBurn(m.indices);
       break;
 
-    case 'strike_ready':
+    case 'strike_ready': {
       STATE.strikes = m.n;
-      $('qStrikeN').textContent = m.n + ' READY';
-      $('qStrikeHint').textContent = m.n > 0 ? 'PUSH PHONE FORWARD' : 'EARN 3 CORRECT';
+      const need = m.need || 3, have = m.progress || 0;
+      $('qStrikeN').textContent = m.n > 0 ? 'READY' : `${have} / ${need} CORRECT`;
+      $('qStrikeHint').textContent = m.n > 0 ? 'PUSH PHONE FORWARD OR TAP'
+        : `${need - have} MORE RIGHT ANSWER${need - have === 1 ? '' : 'S'}`;
       $('qBtnStrike').classList.toggle('dis', m.n <= 0);
-      if (m.n > 0) { toast('MISSILE EARNED — PUSH PHONE FORWARD', 'good'); haptic(30); }
+      $('qBtnStrike').classList.toggle('armed', m.n > 0);
+      $('qStrikePips').innerHTML = Array.from({ length: need }, (_, i) =>
+        `<i class="${m.n > 0 || i < have ? 'on' : ''}"></i>`).join('');
+      if (m.earned) { toast('MISSILE LOADED — PUSH PHONE FORWARD', 'good'); haptic(30); }
       break;
+    }
 
     case 'hot':
       hotUpdate(m);
@@ -214,6 +226,11 @@ function handle(m) {
       if (STATE.pendingInstall === m.token) STATE.pendingInstall = null;
       installGlow();
       setTimeout(() => { installStop(); hideInstallPrompt(); }, 850);
+      if (STATE.arcade && STATE.phase === 'round') {
+        $('mgTitle').textContent = 'PART FITTED';
+        $('mgTitle').style.color = 'var(--good)';
+        $('mgSub').textContent = 'HOLD THE PHONE UPRIGHT — NEXT LEVEL INCOMING';
+      }
       break;
 
     case 'reroll_used':
@@ -251,6 +268,9 @@ function handle(m) {
       break;
 
     case 'intermission':
+      // a game still animating when the round clock ran out is void
+      if (MG.raf) cancelAnimationFrame(MG.raf);
+      MG.active = null; MG.done = true;
       showIntermission(m);
       break;
 
@@ -346,11 +366,12 @@ function handle(m) {
 
 const BRIEF = { id: null, timer: null, deadline: 0 };
 const INSTALL = { active: false, progress: 0, base: null, sent: false };
+const INSTALL_DEG = 50;     // how far to turn the phone to fit a part
 const BRIEF_INFO = {
   quiz: ['ANSWER · PASS · BUILD',
     ['TAP to answer · SHAKE to reroll (2 per round)',
-     'SLIDE LEFT / RIGHT to pass a question',
-     'ROTATE to install parts · PUSH FORWARD to fire a missile']],
+     'SLIDE LEFT / RIGHT to pass · ROTATE 50° to install a part',
+     'Any 3 RIGHT answers load a MISSILE · PUSH FORWARD to fire']],
   discussion: ['DISCUSS',
     ['Talk with the other pilots', 'Compare who passed to whom',
      'Keep the phone upright; no gestures required']],
@@ -358,7 +379,11 @@ const BRIEF_INFO = {
     ['TAP a pilot to mark the threat', 'No phone motion needed for voting']],
   dogfight: ['DOGFIGHT',
     ['BANK phone LEFT / RIGHT to steer', 'TILT forward / back for throttle',
-     'HOLD GUNS to fire · TILT phone to steer']]
+     'HOLD FIRE for guns']],
+  arcade: ['ARCADE',
+    ['TILT to fly — every game is about 5 seconds',
+     'CLEAR a level to earn a part · ROTATE the phone 50° to fit it',
+     'Part you can\'t use? CLAIM it or SHOVE it ◀ ▶ for a tier bump']]
 };
 function showPhaseBrief(m) {
   BRIEF.id = m.briefId;
@@ -397,10 +422,10 @@ function showPhaseBrief(m) {
 }
 
 function installRender() {
-  const pct = Math.min(1, INSTALL.progress / 70);
+  const pct = Math.min(1, INSTALL.progress / INSTALL_DEG);
   $('installTurnFill').style.width = Math.round(pct * 100) + '%';
   $('installTurnNeed').textContent = INSTALL.sent ? 'FITTING…' :
-    `TURN ${Math.max(0, Math.ceil(70 - INSTALL.progress))}° TO FIT`;
+    `TURN ${Math.max(0, Math.ceil(INSTALL_DEG - INSTALL.progress))}° TO FIT`;
   $('installWheel').style.transform = `rotate(${Math.round(INSTALL.progress)}deg)`;
 }
 function installStart() {
@@ -430,10 +455,10 @@ function installOrientation(e) {
   if (INSTALL.base === null) INSTALL.base = {g: e.gamma, b: e.beta};
   const g = Math.abs(e.gamma - INSTALL.base.g);
   const b = Math.abs(e.beta - INSTALL.base.b);
-  INSTALL.progress = Math.min(70, Math.max(g, b));
+  INSTALL.progress = Math.min(INSTALL_DEG, Math.max(g, b));
   installRender();
-  if (INSTALL.progress >= 70) {
-    INSTALL.progress = 70;
+  if (INSTALL.progress >= INSTALL_DEG) {
+    INSTALL.progress = INSTALL_DEG;
     INSTALL.sent = true;
     installRender();
     send({t:'install_part',token:STATE.pendingInstall});
@@ -481,14 +506,31 @@ function paintRole(m) {
 /* ---------------------------------------------------------- round */
 function startRound() {
   startLoop();
+  if (!STATE.quizWired) { wireQuizControls(); wireNeighbours(); STATE.quizWired = true; }
+  renderJetStrip();
+  renderHot();
+
+  if (STATE.arcade) {
+    // Arcade has no question screen. Stand by on the game screen until the
+    // server deals the first level, which lands within a beat.
+    const cv = $('mgCanvas');
+    if (cv) { const c = cv.getContext('2d'); c.clearRect(0, 0, cv.width, cv.height); }
+    $('mgTitle').textContent = 'GET READY';
+    $('mgTitle').style.color = 'var(--accent)';
+    $('mgSub').textContent = 'FIRST LEVEL INCOMING';
+    $('mgResult').innerHTML = '';
+    $('mgScore').textContent = STATE.score || 0;
+    mgSetLevelChip(1);
+    show('s-minigame');
+    return;
+  }
+
   show('s-quiz');
   QUIZ.correctCount = 0;
   STATE.score = 0;
   $('qScore').textContent = '0';
   $('qStreak').textContent = '0';
-  if (!STATE.quizWired) { wireQuizControls(); wireNeighbours(); STATE.quizWired = true; }
   renderNeighbours();
-  renderJetStrip();
 }
 
 /* One render loop drives the quiz and the dogfight alike. */
@@ -501,12 +543,13 @@ function startLoop() {
 }
 
 function loop() {
-  if (FIGHT.on) fightTick();
+  if (FIGHT.on) { fightTick(); drawCanopy(); }
   const now = performance.now();
   const dt = Math.min(60, now - lastT);
   lastT = now;
 
   if (STATE.phase === 'round') {
+    hotTick(dt / 1000);
     quizTick();
     const left = Math.max(0, (endsAt - now) / 1000);
     $('qClock').textContent = fmt(left);
@@ -877,15 +920,16 @@ function showIntermission(m) {
   $('interEyebrow').textContent = `ROUND ${m.round} COMPLETE`;
   $('interNext').textContent = m.last ? 'DISCUSSION NEXT' : 'NEXT ROUND STARTING';
 
-  // Only the Detective gets the pass ledger. Everyone else sees lines cleared.
-  const ledger = !!m.ledger;
-  $('interTitle').textContent = ledger ? 'PASS LEDGER' : 'ROUND STANDINGS';
-  $('interSub').textContent = ledger
-    ? 'Passes the table saw. Yours alone — nobody else has this.'
-    : 'Lines cleared this match.';
-  $('interSub').style.color = ledger ? 'var(--violet)' : '';
+  // Arcade ranks by how high each pilot climbed; the quiz by jet rating.
+  const arcade = !!m.arcade;
+  $('interTitle').textContent = arcade ? 'LADDER STANDINGS' : 'ROUND STANDINGS';
+  $('interSub').textContent = arcade
+    ? 'Level reached on the arcade ladder.'
+    : 'Jet rating — what you would fly right now.';
+  $('interSub').style.color = '';
 
-  const val = s => ledger ? s.passes : s.lines;
+  const val = s => arcade ? (s.level || 1) : (s.rating || 0);
+  if (arcade) m.standings.sort((a, b) => (b.level || 1) - (a.level || 1));
   const max = Math.max(1, ...m.standings.map(val));
   $('interTally').innerHTML = m.standings.map((s, i) => `
     <div class="tally-row${s.name === STATE.name ? ' me' : ''}"
@@ -894,7 +938,7 @@ function showIntermission(m) {
       <span class="t-n">${s.name}</span>
       <span class="t-bar">
         <span class="t-fill" style="width:${Math.round((val(s) / max) * 90)}px;
-              background:${ledger ? 'var(--danger)' : 'var(--good)'}"></span>
+              background:${arcade ? 'var(--warn)' : 'var(--good)'}"></span>
         <span class="t-c">${val(s)}</span>
       </span>
     </div>`).join('');
@@ -963,15 +1007,10 @@ function buildVote(players, kind) {
 
 /* ---------------------------------------------------------- results */
 function showResults(m) {
-  const mine = STATE.role ? STATE.role.team : 'crew';
-
-  const won = m.winner === mine;
-  $('resEyebrow').textContent = won ? 'YOU WIN' : 'YOU LOSE';
-  $('resTitle').textContent = m.winner === 'imposter' ? 'IMPOSTER WINS' : 'CREW WINS';
-  $('resTitle').style.color = won ? 'var(--good)' : 'var(--danger)';
-  $('resReason').textContent = (m.reveal && m.reveal.reason) || '';
-  show('s-results');
-  haptic(won ? [40, 60, 40] : 200);
+  // The old crew/imposter verdict is gone; the results phase shows the same
+  // podium the dogfight ended on. Only redraw if we are not already there.
+  if ($('s-results').classList.contains('on') && $('resPodium').children.length) return;
+  showPodium(m.fightStandings || []);
 }
 
 /* ---------------------------------------------------------- boot */
@@ -1222,3 +1261,18 @@ if (playerLogo) {
 }
 
 function breakAimOnLobby() { const el = document.getElementById('aim'); if (el) el.classList.remove('on'); }
+
+/* ---------------------------------------------------------- how to play */
+/* Rules open in a sheet over the lobby rather than navigating away: leaving
+   the page would close the socket and drop this phone out of the room. */
+(function wireHelp() {
+  const btn = document.getElementById('helpBtn');
+  const sheet = document.getElementById('helpModal');
+  if (!btn || !sheet) return;
+  btn.onclick = () => {
+    const f = document.getElementById('helpFrame');
+    if (!f.src) f.src = '/rules?embed=1';
+    sheet.classList.add('on');
+  };
+  document.getElementById('helpClose').onclick = () => sheet.classList.remove('on');
+})();

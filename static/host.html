@@ -6,130 +6,409 @@
 <title>SCRAMBLE — Host</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/css/style.css">
 <style>
+/* ===========================================================
+   HOST CABINET
+   The big screen is the arcade machine everyone is gathered
+   round: a lit marquee, bezel-framed plates with hard pixel
+   shadows, chunky tabs, and visible scanlines.
+   =========================================================== */
+:root {
+  --cab-ink: #05060a;
+  --cab-plate: #0e121c;
+  --cab-plate-2: #141a28;
+  --cab-edge: #2a3350;
+  --cab-edge-hi: #3b4870;
+  --cab-drop: #04050a;
+  --neon: #3e8fff;
+  --neon-2: #6ef0a8;
+  --neon-3: #f5a524;
+  --neon-4: #ff5fa2;
+}
 body { user-select: none; cursor: default; }
 body.urgent::after {
   content: ''; position: fixed; inset: 0; z-index: 200; pointer-events: none;
-  border: 5px solid rgba(229, 72, 77, .75);
+  border: 6px solid rgba(229, 72, 77, .8);
   box-shadow: inset 0 0 90px 10px rgba(229, 72, 77, .3);
-  animation: final-pulse 1s ease-in-out infinite;
+  animation: final-pulse 1s steps(2) infinite;
 }
 
-/* Welcoming, quieter Grok setup panel. */
-.ai-bank-panel { margin-top:20px; padding:22px; max-width:620px;
-  border:1px solid rgba(143,171,214,.25); border-radius:20px;
-  background:linear-gradient(155deg,rgba(37,52,77,.94),rgba(19,28,45,.97));
-  box-shadow:0 16px 34px rgba(0,0,0,.22),inset 0 1px 0 rgba(232,242,255,.08); }
-.ai-bank-panel .eyebrow { margin-bottom:10px; color:#acc9ee; letter-spacing:.08em; }
-.ai-tabs { display:flex;gap:10px;margin:16px 0 18px;padding:5px;
-  background:rgba(8,16,29,.44);border:1px solid rgba(145,174,210,.15);border-radius:16px; }
-.ai-tab { flex:1;cursor:pointer;background:transparent;color:#b6c4d9;
-  border:1px solid transparent;border-radius:12px;padding:13px 10px;
-  font-family:var(--font);font-weight:800;letter-spacing:.06em;
-  transition:background .15s,color .15s,box-shadow .15s; }
-.ai-tab.active { color:#fff;border-color:rgba(168,204,255,.34);
-  background:linear-gradient(155deg,#497eaf,#306394);box-shadow:0 4px 12px rgba(12,39,73,.35); }
-.ai-tab:hover:not(:disabled):not(.active) { background:rgba(106,156,212,.14);color:#eef6ff; }
-.ai-tab:focus-visible { outline:2px solid #b7d8ff;outline-offset:2px; }
-.ai-row {display:flex;flex-direction:column;gap:8px;margin:13px 0;text-align:left}
-.ai-row label {font-size:11px;color:#c3d3e9;font-weight:750;letter-spacing:.06em}
-.ai-row input,.ai-row select {width:100%;background:rgba(10,19,34,.73);
-  border:1px solid rgba(143,174,212,.28);color:#f0f6ff;padding:13px 14px;
-  border-radius:12px;font:inherit;min-width:0;outline:none; }
-.ai-row input:focus,.ai-row select:focus {border-color:#8cc3ff;box-shadow:0 0 0 3px rgba(83,155,238,.14);}
-.ai-row input[type=file] {font-size:12px}
-#aiGenerate {margin-top:16px;width:100%;padding:16px;border-radius:13px;}
-#aiGenerate:disabled {opacity:.5;cursor:default}
-.ai-bank-status {font:700 11px var(--mono);color:#a3e6bf;margin-top:14px;overflow-wrap:anywhere;line-height:1.5}
-.ai-bank-note {font-size:12px;color:#aebed2;margin-top:8px;line-height:1.5}
-.ai-progress {margin:10px 0 6px;}
-.ai-progress-track {height:9px;border-radius:20px;background:rgba(40,65,91,.7);overflow:hidden;border:1px solid rgba(145,174,210,.2)}
-.ai-progress-fill {height:100%;width:0;background:linear-gradient(90deg,#5198cb,#a1dcbf);transition:width .25s ease;border-radius:20px}
-.ai-progress-caption {display:flex;justify-content:space-between;gap:12px;margin-top:6px;color:#bdcee3;font:700 10px var(--mono)}
-
-/* Roomier lobby cards using the same visual language as the QR panel. */
-#viewLobby.host-body {grid-template-columns:minmax(240px,.86fr) minmax(355px,1.5fr) minmax(272px,1fr);gap:22px;margin-top:25px;align-items:start;}
-#viewLobby .qr-panel,#viewLobby .ai-bank-panel,#viewLobby #settingsPanel,#viewLobby .host-leaderboard {
-  background:linear-gradient(150deg,rgba(32,43,63,.96),rgba(15,23,37,.97));
-  border:1px solid rgba(139,173,211,.24);border-radius:20px;
-  box-shadow:0 15px 35px rgba(0,0,0,.23),inset 0 1px 0 rgba(232,242,255,.08);
+/* stronger scanlines than the phone gets — a TV across a room can take it */
+.crt {
+  background:
+    repeating-linear-gradient(to bottom, rgba(0,0,0,.16) 0 1px, transparent 1px 3px),
+    radial-gradient(130% 110% at 50% 50%, transparent 62%, rgba(0,0,0,.5) 100%);
 }
-#viewLobby .qr-panel {padding:26px 20px;min-height:360px;}
-#viewLobby .qr-panel img {width:min(100%,215px);height:auto;aspect-ratio:1;margin:18px auto 0!important;filter:drop-shadow(0 5px 14px rgba(0,0,0,.22));}
-#viewLobby .qr-panel .qr-code {font-size:30px;margin-top:15px;}
-#viewLobby .qr-panel .qr-url {font-size:12px;margin-top:11px;overflow-wrap:anywhere;line-height:1.5;}
-#viewLobby .roster {gap:0;min-width:0;}
-#viewLobby .roster-head {margin:0 0 13px;padding:7px 4px 5px;}
-#viewLobby .roster-head .rh-n {font-size:34px;}
-#viewLobby .roster-head .rh-k {font-size:10px;letter-spacing:.12em;}
-#viewLobby .roster-grid {grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:9px;max-height:160px;overflow:auto;}
-#viewLobby .roster-card {padding:10px 11px;gap:9px;border-radius:12px;}
-#viewLobby .roster-card .rc-name {font-size:12px;}
-#viewLobby .ai-bank-panel {max-width:none;margin-top:18px;padding:22px;position:relative;overflow:hidden;}
-#viewLobby .ai-bank-panel .eyebrow {font-size:10px;position:relative;z-index:1;}
-#viewLobby .ai-tabs {margin:18px 0 18px;padding:5px;gap:7px;}
-#viewLobby .ai-tab {padding:12px 9px;font-size:12px;}
-#viewLobby .ai-row {margin:14px 0;gap:8px;}
-#viewLobby .ai-row label {font-size:11px;}
-#viewLobby .ai-row input,#viewLobby .ai-row select {padding:13px 13px;min-height:46px;}
-#viewLobby #aiGenerate {padding:15px;margin-top:14px;}
-#viewLobby .ai-bank-status {margin-top:16px;font-size:11px;}
-#viewLobby .ai-bank-note {font-size:11px;margin-top:11px;}
-#viewLobby .host-leaderboard {padding:18px;margin:16px 0 0;}
-#viewLobby .lobby-ranks {max-height:175px;gap:6px;}
-#viewLobby .lobby-rank {padding:8px 10px;}
-#viewLobby .lobby-board-label {margin-bottom:12px;}
-#viewLobby .lobby-settings-side {min-width:0;}
-#viewLobby #setToggle {display:none;}
-#viewLobby #settingsPanel {display:block!important;padding:23px 20px;margin:0;}
-#viewLobby #settingsPanel::before {content:'MATCH SETTINGS';display:block;font:800 11px var(--font);letter-spacing:.11em;color:#bcd9ff;margin-bottom:19px;}
-#viewLobby .set-grid {grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;}
-#viewLobby .set {padding:13px 7px;gap:9px;border:1px solid rgba(143,171,214,.17);border-radius:13px;background:rgba(7,16,31,.42);min-height:107px;}
-#viewLobby .set-k {font-family:var(--font);font-size:10px;letter-spacing:.03em;line-height:1.3;color:#c6d7ed;}
-#viewLobby .stepper {gap:7px;}
-#viewLobby .st-btn {width:31px;height:31px;font-size:16px;border-radius:9px;}
-#viewLobby .st-v {font-family:var(--mono);font-size:14px;min-width:31px;}
-#viewLobby .set-u {font-size:9px;color:#8fa3bf;}
-#viewLobby .set-foot {margin-top:16px;padding-top:14px;gap:9px;flex-wrap:wrap;font-size:10px;}
-/* Gentle pixel clouds and a tiny flight trail, without scanlines. */
-.ai-pixel-sky {position:absolute;right:12px;top:12px;width:91px;height:38px;opacity:.65;pointer-events:none;animation:aiFloat 6s ease-in-out infinite;image-rendering:pixelated;}
-.qr-pixel-sky {width:116px;height:42px;display:block;margin:0 auto 8px;opacity:.78;image-rendering:pixelated;animation:aiFloat 7s ease-in-out infinite;}
-@keyframes aiFloat {0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
-@media(prefers-reduced-motion:reduce){.ai-pixel-sky,.qr-pixel-sky{animation:none}}
-@media(min-width:1350px){.host{padding:23px 30px;}.host-foot{margin-top:20px;}}
-@media(max-width:1250px){#viewLobby.host-body{grid-template-columns:minmax(230px,.8fr) minmax(340px,1.3fr);gap:19px;}#viewLobby .lobby-settings-side{grid-column:1/-1;}#viewLobby .set-grid{grid-template-columns:repeat(4,minmax(0,1fr));}}
-@media(max-width:760px){#viewLobby.host-body{grid-template-columns:1fr;gap:18px;}#viewLobby .lobby-settings-side{grid-column:auto;}#viewLobby .set-grid{grid-template-columns:repeat(2,minmax(0,1fr));}#viewLobby .qr-panel{min-height:0;}#viewLobby .ai-bank-panel{padding:20px;}}
 
+.host { padding: 22px 32px 18px; gap: 0; }
 
-/* Shared QR-card design: clean, soft, evenly-spaced host controls. */
-#viewLobby .ai-bank-panel {
-  padding:25px 24px 24px;
-  background:linear-gradient(150deg,rgba(32,43,63,.96),rgba(15,23,37,.97));
-  border:1px solid rgba(139,173,211,.24);
-  border-radius:20px;
-  box-shadow:0 15px 35px rgba(0,0,0,.23),inset 0 1px 0 rgba(232,242,255,.08);
+/* ---------- marquee ---------- */
+.host-head {
+  position: relative; padding: 14px 20px;
+  background: linear-gradient(180deg, #0b1020, #070912);
+  border: 3px solid var(--cab-edge); border-radius: 6px;
+  box-shadow: 0 6px 0 var(--cab-drop), inset 0 0 0 2px #070912,
+              inset 0 0 40px rgba(62,143,255,.12);
 }
-#viewLobby .ai-bank-panel .eyebrow {font-family:var(--arcade);letter-spacing:.07em;color:var(--text-dim);padding:4px 0 7px;}
-#viewLobby .ai-tabs {display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:15px 0 22px;padding:6px;border-radius:15px;background:rgba(9,20,36,.55);}
-#viewLobby .ai-tab {width:100%;padding:13px 8px;border-radius:11px;letter-spacing:.04em;font-weight:800;}
-#viewLobby .ai-tab.active {background:linear-gradient(140deg,#668fbc,#3e6e9d);color:#fff;box-shadow:0 4px 12px rgba(8,25,49,.26);}
-#viewLobby .ai-row {margin:0 0 16px;gap:8px;}
-#viewLobby .ai-row label {font:750 10px var(--font);letter-spacing:.08em;color:#bdd3ec;}
-#viewLobby .ai-row input,#viewLobby .ai-row select {
-  border-radius:11px;min-height:45px;padding:11px 13px;
-  border:1px solid rgba(139,173,211,.3);background:rgba(8,20,35,.55);
+.host-head::before {
+  /* a row of marquee bulbs along the top edge */
+  content: ''; position: absolute; left: 14px; right: 14px; top: -3px; height: 3px;
+  background: repeating-linear-gradient(90deg, var(--neon-3) 0 6px, transparent 6px 18px);
+  animation: bulbs 1.2s steps(2) infinite;
 }
-#viewLobby #aiGenerate {width:100%;margin:4px 0 0;padding:15px 16px;border-radius:12px;}
-#viewLobby .ai-bank-status {margin-top:16px;padding:11px 13px;border-radius:10px;background:rgba(13,36,47,.6);border:1px solid rgba(117,188,181,.23);font-size:11px;line-height:1.5;}
-#viewLobby .ai-bank-note {margin-top:13px;line-height:1.5;color:#afbed1;}
-#viewLobby .ai-progress {padding:12px 13px;border-radius:12px;background:rgba(10,25,42,.47);border:1px solid rgba(139,173,211,.16);margin-top:12px;}
-#viewLobby .ai-progress-caption {margin-top:9px;}
-#viewLobby .ai-pixel-sky {right:18px;top:16px;opacity:.55;}
-#viewLobby .qr-panel,#viewLobby #settingsPanel,#viewLobby .host-leaderboard {border-radius:20px;}
-#viewResults > .ai-bank-panel {display:none!important;}
+@keyframes bulbs { 50% { background-position: 12px 0; } }
+.host-logo .hl-title {
+  font-size: clamp(18px, 2.2vw, 30px); letter-spacing: .06em;
+  color: #fff; text-shadow: 3px 3px 0 #1d5fb8, 0 0 18px rgba(62,143,255,.55);
+}
+.host-logo .hl-sub { color: var(--neon-3); font-size: clamp(8px, .9vw, 11px); margin-top: 11px; }
+.host-phase {
+  font-family: var(--arcade); font-size: 12px; padding: 13px 18px;
+  color: var(--neon-2); background: #04060a;
+  border: 3px solid var(--cab-edge); border-radius: 4px;
+  box-shadow: 0 4px 0 var(--cab-drop), inset 0 0 14px rgba(110,240,168,.12);
+  text-shadow: 0 0 10px rgba(110,240,168,.55);
+}
 
+/* ---------- plates ---------- */
+.plate, #viewLobby .qr-panel, #viewLobby .ai-bank-panel, #viewLobby #settingsPanel,
+#viewLobby .host-leaderboard, #viewRound .card, .arcade-board {
+  position: relative;
+  background: linear-gradient(180deg, var(--cab-plate-2), var(--cab-plate));
+  border: 3px solid var(--cab-edge); border-radius: 6px;
+  box-shadow: 0 6px 0 var(--cab-drop), inset 0 0 0 2px #090c14,
+              inset 0 2px 0 3px rgba(255,255,255,.03);
+}
+/* every plate gets a lit title strip, like a cabinet's control-panel label */
+.plate-title, #viewLobby .ai-bank-panel .eyebrow, #viewLobby .qr-panel .eyebrow,
+#viewLobby .lobby-board-label, #viewLobby #settingsPanel::before, #viewRound .eyebrow {
+  font-family: var(--arcade); font-size: 10px; letter-spacing: .06em;
+  color: var(--neon-3); text-shadow: 0 0 8px rgba(245,165,36,.4);
+}
+
+/* ---------- lobby layout ---------- */
+#viewLobby.host-body {
+  grid-template-columns: minmax(250px,.85fr) minmax(360px,1.5fr) minmax(280px,1fr);
+  gap: 22px; margin-top: 22px; align-items: start;
+}
+#viewLobby .qr-panel { padding: 22px 20px 24px; }
+#viewLobby .qr-panel img {
+  width: min(100%, 220px); height: auto; aspect-ratio: 1; margin: 16px auto 0 !important;
+  border: 6px solid #fff; border-radius: 2px; padding: 4px;
+  box-shadow: 0 0 0 3px var(--cab-edge), 0 0 24px rgba(62,143,255,.3);
+}
+#viewLobby .qr-panel .qr-code {
+  font-size: clamp(26px, 3vw, 40px); margin-top: 18px; color: #fff;
+  text-shadow: 3px 3px 0 #1d5fb8, 0 0 16px rgba(62,143,255,.5);
+}
+#viewLobby .qr-panel .qr-url { font-size: 11px; margin-top: 12px; overflow-wrap: anywhere; color: var(--text-mute); }
+.insert-coin {
+  font-family: var(--arcade); font-size: 9px; color: var(--neon-2);
+  margin-top: 16px; animation: blink 1.1s steps(1) infinite;
+}
+
+#viewLobby .roster { min-width: 0; }
+#viewLobby .roster-head { margin: 0 0 12px; align-items: center; }
+#viewLobby .roster-head .rh-n { font-size: 34px; color: var(--neon-2); text-shadow: 0 0 14px rgba(110,240,168,.45); }
+#viewLobby .roster-head .rh-k { font-size: 10px; color: var(--text-dim); }
+#viewLobby .roster-grid { grid-template-columns: repeat(auto-fill,minmax(150px,1fr)); gap: 9px; max-height: 164px; overflow: auto; }
+#viewLobby .roster-card {
+  padding: 9px 11px; gap: 9px; border-radius: 4px;
+  background: #090c14; border: 2px solid var(--cab-edge); box-shadow: 0 3px 0 var(--cab-drop);
+}
+#viewLobby .roster-card .rc-name { font-size: 10px; }
+
+/* ---------- the bank panel ---------- */
+#viewLobby .ai-bank-panel { margin-top: 18px; padding: 20px 20px 18px; overflow: hidden; }
+.ai-tabs {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 16px 0 18px;
+}
+.ai-tab {
+  cursor: pointer; padding: 13px 6px 11px; border-radius: 4px;
+  font-family: var(--arcade); font-size: 10px; letter-spacing: .02em;
+  color: var(--text-dim); background: #090c14;
+  border: 2px solid var(--cab-edge); box-shadow: 0 4px 0 var(--cab-drop);
+  transition: transform .08s, box-shadow .08s, color .12s, background .12s;
+  display: flex; flex-direction: column; align-items: center; gap: 7px;
+}
+.ai-tab small { font-family: var(--font); font-size: 8.5px; letter-spacing: .12em; font-weight: 800; color: var(--text-mute); }
+.ai-tab:hover:not(:disabled):not(.active) { color: #fff; border-color: var(--cab-edge-hi); }
+.ai-tab:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 var(--cab-drop); }
+.ai-tab.active { color: #fff; background: linear-gradient(180deg, #2b6fd6, #1d4f9e); border-color: #7fb4ff; box-shadow: 0 4px 0 #0f2e60, 0 0 16px rgba(62,143,255,.35); }
+.ai-tab.active small { color: #cfe2ff; }
+#aiTabArcade.active { background: linear-gradient(180deg, #e08a12, #a85f05); border-color: #ffd48a; box-shadow: 0 4px 0 #4f2c02, 0 0 16px rgba(245,165,36,.4); }
+#aiTabArcade.active small { color: #fff1d6; }
+.ai-tab:focus-visible { outline: 2px solid #b7d8ff; outline-offset: 2px; }
+.ai-tab:disabled { opacity: .45; cursor: default; }
+
+.ai-row { display: flex; flex-direction: column; gap: 7px; margin: 0 0 13px; text-align: left; }
+.ai-row label { font-family: var(--arcade); font-size: 8px; color: var(--text-dim); letter-spacing: .02em; }
+.ai-row input, .ai-row select {
+  width: 100%; min-height: 44px; padding: 11px 12px; min-width: 0; outline: none;
+  font: 700 13px var(--mono); color: #eaf2ff; background: #04060a;
+  border: 2px solid var(--cab-edge); border-radius: 3px;
+}
+.ai-row input:focus, .ai-row select:focus { border-color: var(--neon); box-shadow: 0 0 0 2px rgba(62,143,255,.2); }
+.ai-row input[type=file] { font-size: 11px; }
+.ai-row-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ai-row-pair .ai-row { margin-bottom: 13px; }
+#aiGenerate { width: 100%; margin-top: 4px; padding: 15px; border-radius: 4px; }
+#aiGenerate:disabled { opacity: .5; cursor: default; }
+.ai-bank-status {
+  margin-top: 14px; padding: 10px 12px; border-radius: 3px;
+  font: 700 10.5px var(--mono); line-height: 1.5; overflow-wrap: anywhere;
+  color: var(--neon-2); background: #04060a; border: 2px solid rgba(110,240,168,.25);
+}
+.ai-bank-note { font-size: 11px; color: var(--text-mute); margin-top: 10px; line-height: 1.5; }
+.ai-progress { margin-top: 12px; padding: 10px 12px; background: #04060a; border: 2px solid var(--cab-edge); border-radius: 3px; }
+.ai-progress-track { height: 10px; background: #0d1220; overflow: hidden;
+  -webkit-mask: repeating-linear-gradient(90deg,#000 0 8px,transparent 8px 10px);
+          mask: repeating-linear-gradient(90deg,#000 0 8px,transparent 8px 10px); }
+.ai-progress-fill { height: 100%; width: 0; background: var(--neon-2); transition: width .25s steps(8); }
+.ai-progress-caption { display: flex; justify-content: space-between; gap: 12px; margin-top: 7px; color: var(--text-dim); font: 700 10px var(--mono); }
+
+/* the arcade tab's explainer: five game cards instead of form fields */
+.arcade-intro { display: none; }
+.ai-bank-panel.is-arcade .arcade-intro { display: block; }
+.ai-bank-panel.is-arcade .ai-question-only { display: none !important; }
+.arcade-games { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.arcade-game { padding: 10px 4px 8px !important; }
+.arcade-game b { font-size: 6.5px !important; }
+.arcade-game {
+  padding: 12px 8px 10px; text-align: center; border-radius: 3px;
+  background: #04060a; border: 2px solid var(--cab-edge);
+}
+.arcade-game canvas { width: 54px; height: 40px; display: block; margin: 0 auto 8px; image-rendering: pixelated; }
+.arcade-game b { display: block; font-family: var(--arcade); font-size: 8px; color: #fff; line-height: 1.5; }
+.arcade-game span { display: block; font-size: 9px; color: var(--text-mute); font-weight: 700; letter-spacing: .06em; margin-top: 5px; }
+.arcade-rules { margin: 12px 0 2px; padding: 0; list-style: none; display: grid; gap: 7px; }
+.arcade-rules li { font-size: 11.5px; color: var(--text-dim); line-height: 1.45; display: flex; gap: 8px; }
+.arcade-rules li::before { content: '▸'; color: var(--neon-3); }
+
+.ai-pixel-sky { position: absolute; right: 16px; top: 14px; width: 91px; height: 38px; opacity: .5; pointer-events: none; image-rendering: pixelated; animation: aiFloat 6s steps(6) infinite; }
+.qr-pixel-sky { width: 116px; height: 42px; display: block; margin: 0 auto 10px; opacity: .8; image-rendering: pixelated; animation: aiFloat 7s steps(6) infinite; }
+@keyframes aiFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+
+/* ---------- leaderboard + settings ---------- */
+#viewLobby .host-leaderboard { padding: 16px; margin: 18px 0 0; }
+#viewLobby .lobby-ranks { max-height: 172px; gap: 5px; }
+#viewLobby .lobby-rank { padding: 7px 9px; border-radius: 3px; background: #04060a; border: 2px solid #121828; }
+#viewLobby .lobby-rank-no { font-family: var(--arcade); font-size: 9px; color: var(--neon-3); }
+#viewLobby .lobby-rank-name { font-family: var(--arcade); font-size: 8.5px; font-weight: 400; }
+#viewLobby .lobby-rank-pts { font-family: var(--arcade); font-size: 8.5px; color: var(--neon-2); }
+#viewLobby .lobby-settings-side { min-width: 0; }
+#viewLobby #setToggle { display: none; }
+#viewLobby #settingsPanel { display: block !important; padding: 20px 18px; margin: 0; }
+#viewLobby #settingsPanel::before { content: 'MATCH SETTINGS'; display: block; margin-bottom: 16px; }
+#viewLobby .set-grid { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+#viewLobby .set { padding: 12px 6px; gap: 9px; min-height: 104px; border: 2px solid var(--cab-edge); border-radius: 3px; background: #04060a; }
+#viewLobby .set-k { font-size: 7.5px; line-height: 1.5; color: var(--text-dim); }
+#viewLobby .stepper { gap: 7px; }
+#viewLobby .st-btn { width: 30px; height: 30px; font-size: 16px; border-radius: 3px; background: #141a28; border-color: var(--cab-edge); }
+#viewLobby .st-v { font-size: 13px; min-width: 40px; color: var(--neon-2); text-shadow: 0 0 8px rgba(110,240,168,.4); }
+#viewLobby .set-u { font-size: 8px; color: var(--text-mute); }
+#viewLobby .set-foot { margin-top: 14px; padding-top: 12px; gap: 9px; flex-wrap: wrap; font-size: 10px; border-top: 2px solid #121828; }
+#viewResults > .ai-bank-panel { display: none !important; }
+
+/* ---------- round view ---------- */
+#viewRound.host-body { grid-template-columns: minmax(290px, 360px) 1fr; gap: 26px; margin-top: 22px; }
+#viewRound .card { padding: 20px !important; }
+.host-timer { font-size: clamp(42px, 5.4vw, 74px); color: #fff; text-shadow: 4px 4px 0 #1d5fb8, 0 0 22px rgba(62,143,255,.4); }
+.round-of { font-family: var(--arcade); font-size: 10px; color: var(--text-dim); margin-top: 16px; line-height: 1.6; }
+.round-of .mono { font-family: var(--arcade); color: var(--neon-3); }
+.seat { border: 3px solid var(--cab-edge); border-radius: 4px; background: linear-gradient(180deg, var(--cab-plate-2), var(--cab-plate)); box-shadow: 0 5px 0 var(--cab-drop); }
+.seat .s-meta { font-family: var(--arcade); font-size: 7px; line-height: 1.6; }
+.seat .s-lvl { color: var(--neon-3); }
+.feed-item { border-radius: 3px; background: #090c14; border: 2px solid #141a28; font-size: 13.5px; }
+
+/* seats are centred on the ring, so the top and bottom ones overhang it */
+#viewRound .circle-wrap { margin: 64px auto 60px; max-height: 50vh; }
+
+/* arcade ladder board — replaces the accuracy meter in arcade rounds */
+.arcade-board { margin-top: 20px; padding: 18px; display: none; }
+.is-arcade-round .arcade-board { display: block; }
+.is-arcade-round #accuracyPanel { display: none !important; }
+.ladder { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+.ladder-row {
+  display: grid; grid-template-columns: 22px 28px 1fr auto; align-items: center; gap: 9px;
+  padding: 7px 9px; background: #04060a; border: 2px solid #121828; border-radius: 3px;
+  transition: border-color .2s;
+}
+.ladder-row.flash-up { border-color: var(--neon-2); }
+.ladder-row.flash-down { border-color: var(--danger); }
+.ladder-row .lr-no { font-family: var(--arcade); font-size: 9px; color: var(--neon-3); }
+.ladder-row svg { display: block; }
+.ladder-row .lr-name { font-family: var(--arcade); font-size: 8.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ladder-row .lr-game { display: block; font: 800 8px var(--font); letter-spacing: .1em; color: var(--text-mute); margin-top: 4px; }
+.ladder-row .lr-lvl { display: flex; align-items: center; gap: 2px; }
+.ladder-row .lr-lvl i { width: 5px; height: 12px; background: #1a2030; }
+.ladder-row .lr-lvl i.on { background: var(--neon-3); box-shadow: 0 0 6px rgba(245,165,36,.5); }
+.ladder-row .lr-num { font-family: var(--arcade); font-size: 10px; color: #fff; margin-left: 6px; min-width: 20px; text-align: right; }
+
+
+/* ---------- dogfight view ---------- */
+#viewFight { gap: 14px; margin-top: 18px; min-height: 0; }
+#viewFight .arena-head { display: flex; align-items: center; gap: 22px; margin: 0; }
+.fight-clock { font-family: var(--arcade); font-size: clamp(26px, 3vw, 40px); color: #fff; text-shadow: 3px 3px 0 #1d5fb8; }
+.arena-feed { margin-left: auto; display: flex; flex-direction: row-reverse; gap: 8px; max-width: 64%; overflow: hidden; }
+.arena-feed .feed-item { white-space: nowrap; padding: 8px 12px; font-size: 12.5px; }
+.arena-feed .feed-item.kill { border-color: rgba(229,72,77,.6); }
+.arena-feed .feed-item.fault { border-color: rgba(245,165,36,.6); }
+.arena-row { flex: 1; display: grid; grid-template-columns: 1fr 270px; gap: 18px; min-height: 0; }
+.arena-wrap { min-height: 360px; background: #0d1a30; }
+.arena-countdown { background: rgba(5,7,12,.6); color: #fff; text-shadow: 4px 4px 0 #1d5fb8; }
+.arena-side { padding: 16px 14px; overflow: hidden;
+  background: linear-gradient(180deg, var(--cab-plate-2), var(--cab-plate));
+  border: 3px solid var(--cab-edge); border-radius: 6px; box-shadow: 0 6px 0 var(--cab-drop); }
+.arena-side .arena-board { display: flex; flex-direction: column; gap: 7px; margin-top: 14px; }
+.pilot-card { display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 10px;
+  padding: 8px 10px; background: #04060a; border: 2px solid #141a28; border-radius: 3px; }
+.pilot-card.down { opacity: .45; }
+.pilot-card.threat { border-color: rgba(229,72,77,.7); }
+.pilot-card svg { display: block; }
+.pc-mid { min-width: 0; }
+.pc-name { font-family: var(--arcade); font-size: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-hp { display: flex; gap: 2px; margin-top: 7px; height: 6px; }
+.pc-hp i { flex: 1; }
+.pc-resp { font-size: 8px; font-weight: 800; letter-spacing: .14em; color: var(--text-mute); }
+.pc-k { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.pc-k b { font-family: var(--arcade); font-size: 13px; color: var(--neon-3); }
+.pc-k span { font-size: 7px; font-weight: 800; letter-spacing: .14em; color: var(--text-mute); }
+@media (max-width: 1000px) { .arena-row { grid-template-columns: 1fr; } }
+
+
+/* ---------- header: help button ---------- */
+.head-right { display: flex; align-items: center; gap: 12px; }
+.help-btn {
+  display: flex; align-items: center; gap: 10px; cursor: pointer;
+  font-family: var(--arcade); font-size: 10px; color: #fff; letter-spacing: .04em;
+  padding: 11px 16px 11px 11px; border-radius: 4px;
+  background: linear-gradient(180deg, #e08a12, #a85f05); border: 3px solid #ffd48a;
+  box-shadow: 0 4px 0 #4f2c02;
+}
+.help-btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #4f2c02; }
+.help-btn .hb-q { width: 20px; height: 20px; display: grid; place-items: center; background: #fff; color: #a85f05; border-radius: 2px; font-size: 10px; }
+.host-logo { border-radius: 4px; padding: 4px 8px 4px 4px; margin: -4px; transition: background .12s; }
+.host-logo:hover { background: rgba(62,143,255,.1); }
+.host-logo:focus-visible { outline: 2px solid #b7d8ff; outline-offset: 2px; }
+
+/* ---------- bot stepper ---------- */
+.bot-ctl { margin-left: auto; display: flex; align-items: center; gap: 8px;
+  padding: 5px 6px 5px 11px; background: #04060a; border: 2px solid var(--cab-edge); border-radius: 4px; }
+.bot-ctl.locked { opacity: .45; pointer-events: none; }
+.bot-ctl .bc-k { font-family: var(--arcade); font-size: 8px; color: var(--text-dim); margin-right: 2px; }
+.bot-ctl .st-btn { width: 28px; height: 28px; font-size: 15px; border-radius: 3px; background: #141a28; border-color: var(--cab-edge); }
+.bot-ctl .st-btn:disabled { opacity: .35; }
+.bot-ctl .bc-v { font-family: var(--arcade); font-size: 12px; color: var(--neon-3); min-width: 22px; text-align: center; }
+
+/* ---------- crowded tables ---------- */
+.circle.dense .seat { width: 100px; padding: 7px 6px; }
+.circle.dense .seat .s-name { font-size: 7px; margin-top: 5px; }
+.circle.dense .seat .s-jet { margin-top: 4px; }
+.circle.dense .seat .s-bay { width: 10px; height: 4px; }
+
+/* ---------- how to play modal ---------- */
+.help-modal { position: fixed; inset: 0; z-index: 300; display: none; place-items: center;
+  padding: 28px; background: rgba(3,4,8,.78); backdrop-filter: blur(4px); }
+.help-modal.on { display: grid; }
+.help-box { width: min(920px, 100%); height: min(86vh, 900px); display: flex; flex-direction: column;
+  background: #070912; border: 3px solid var(--cab-edge); border-radius: 6px; box-shadow: 0 8px 0 var(--cab-drop), 0 30px 80px rgba(0,0,0,.6); overflow: hidden; }
+.help-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px 12px 18px;
+  border-bottom: 3px solid var(--cab-edge); font-family: var(--arcade); font-size: 11px; color: var(--neon-3); }
+.help-close { width: 34px; height: 34px; cursor: pointer; border-radius: 3px; font-size: 15px; color: #fff;
+  background: #141a28; border: 2px solid var(--cab-edge); }
+.help-box iframe { flex: 1; width: 100%; border: 0; background: #07080c; }
+
+
+/* ---------- results podium ---------- */
+#viewResults { margin-top: 18px; gap: 18px; }
+.podium-head { text-align: center; }
+.podium-head .ph-k { font-family: var(--arcade); font-size: 10px; color: var(--neon-3); }
+.podium-head .ph-v { font-family: var(--arcade); font-size: clamp(22px, 3vw, 38px); color: #fff; margin-top: 12px;
+  text-shadow: 4px 4px 0 #1d5fb8, 0 0 22px rgba(62,143,255,.45); }
+.podium { display: flex; align-items: flex-end; justify-content: center; gap: 18px; min-height: 380px; }
+.pod { position: relative; width: min(250px, 28vw); display: flex; flex-direction: column; align-items: center;
+  opacity: 0; animation: pod-rise .7s cubic-bezier(.22,1,.36,1) forwards; }
+@keyframes pod-rise { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: none; } }
+.pod-av svg { display: block; border-radius: 4px; box-shadow: 0 0 0 3px var(--cab-edge); }
+.pod-1 .pod-av svg { box-shadow: 0 0 0 4px #f5a524, 0 0 26px rgba(245,165,36,.55); }
+.pod-name { font-family: var(--arcade); font-size: 12px; margin-top: 12px; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pod-1 .pod-name { font-size: 15px; color: #ffd48a; }
+.pod-jet { margin-top: 8px; }
+.pod-jet svg { display: block; }
+.pod-pts { display: flex; align-items: baseline; gap: 7px; margin-top: 8px; }
+.pod-pts b { font-family: var(--arcade); font-size: 20px; color: var(--neon-2); text-shadow: 0 0 10px rgba(110,240,168,.4); }
+.pod-1 .pod-pts b { font-size: 26px; }
+.pod-pts span { font-family: var(--arcade); font-size: 8px; color: var(--text-mute); }
+.pod-why { font: 800 8.5px var(--font); letter-spacing: .1em; color: var(--text-mute); margin: 6px 0 10px; text-align: center; }
+.pod-step { width: 100%; display: grid; place-items: center; border: 3px solid; border-bottom: 0; border-radius: 4px 4px 0 0; }
+.pod-step span { font-family: var(--arcade); font-size: 34px; color: rgba(0,0,0,.45); text-shadow: 0 2px 0 rgba(255,255,255,.25); }
+.pod-1 .pod-step { height: 150px; background: linear-gradient(180deg, #f5b73c, #b97c0e); border-color: #ffd48a; }
+.pod-2 .pod-step { height: 104px; background: linear-gradient(180deg, #c3cde4, #7d879c); border-color: #e3e8f4; }
+.pod-3 .pod-step { height: 74px; background: linear-gradient(180deg, #d9905a, #9a5a2c); border-color: #f0b98c; }
+.pod-crown { width: 44px; height: 24px; margin-bottom: 8px; background: #f5a524;
+  clip-path: polygon(0 100%, 0 20%, 22% 55%, 50% 0, 78% 55%, 100% 20%, 100% 100%);
+  filter: drop-shadow(0 0 10px rgba(245,165,36,.7)); animation: crown-bob 1.2s steps(2) infinite; }
+@keyframes crown-bob { 50% { transform: translateY(-4px); } }
+.pod-empty { font-family: var(--arcade); font-size: 11px; color: var(--text-mute); }
+
+.results-lower { display: grid; grid-template-columns: 1.7fr 1fr; gap: 18px; }
+.results-lower .plate { margin: 0; padding: 16px; }
+.standings { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+.st-row { display: grid; grid-template-columns: 26px 32px 1fr auto 70px; align-items: center; gap: 11px;
+  padding: 8px 10px; background: #04060a; border: 2px solid #141a28; border-radius: 3px; }
+.st-row.top { border-color: #2a3350; }
+.st-row svg { display: block; }
+.st-no { font-family: var(--arcade); font-size: 9px; color: var(--neon-3); }
+.st-name { font-family: var(--arcade); font-size: 9px; }
+.st-agenda { font: 800 9px var(--font); letter-spacing: .12em; margin-top: 5px; }
+.st-agenda span { color: var(--text-mute); letter-spacing: .04em; font-weight: 600; margin-left: 6px; }
+.st-stats { font: 700 10px var(--mono); color: var(--text-dim); }
+.st-pts { font-family: var(--arcade); font-size: 11px; color: var(--neon-2); text-align: right; }
+#tallyList { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.vt-row { display: grid; grid-template-columns: 90px 1fr 24px; align-items: center; gap: 10px; }
+.vt-name { font-family: var(--arcade); font-size: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vt-bar { height: 10px; background: #0d1220; }
+.vt-bar i { display: block; height: 100%; background: var(--danger); }
+.vt-n { font-family: var(--arcade); font-size: 10px; text-align: right; }
+.vt-none { font-family: var(--arcade); font-size: 9px; color: var(--text-mute); }
+@media (max-width: 1000px) { .results-lower { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { .pod { animation: none; opacity: 1; } .pod-crown { animation: none; } }
+
+/* ---------- discussion / vote / fight / results ---------- */
+#viewDiscuss .eyebrow, #viewVote .eyebrow, #viewFight .eyebrow { font-family: var(--arcade); font-size: 12px; color: var(--neon-3); }
+.arena-wrap { border: 3px solid var(--cab-edge); border-radius: 6px; box-shadow: 0 6px 0 var(--cab-drop); }
+#arena { image-rendering: pixelated; }
+.arena-pilot { font-family: var(--arcade); font-size: 8.5px; padding: 9px 11px; background: #090c14; border: 2px solid var(--cab-edge); border-radius: 3px; line-height: 1.6; }
+.arena-countdown { font-family: var(--arcade); font-size: clamp(22px, 3vw, 40px); }
+
+.host-foot.in-match #startBtn, .host-foot.in-match #soloBtn { display: none; }
+.host-foot { margin-top: 18px; padding-top: 16px; border-top: 3px solid #121828; }
+.host-foot .hf-hint { font-family: var(--arcade); font-size: 8.5px; line-height: 1.6; color: var(--text-dim); }
+.host .arcade-btn { border-radius: 4px; }
+.host .arcade-btn:not(.ghost) { background: linear-gradient(180deg, #4f97ff, #2b6fd6); box-shadow: 0 6px 0 #133d7d, 0 12px 24px rgba(0,0,0,.4); }
+.host .arcade-btn.ghost { background: #0e121c; border: 3px solid var(--cab-edge); box-shadow: 0 6px 0 var(--cab-drop); }
+.host #startBtn:not([disabled]) { animation: start-glow 1.4s steps(2) infinite; }
+@keyframes start-glow { 50% { box-shadow: 0 6px 0 #133d7d, 0 0 26px rgba(62,143,255,.6); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-pixel-sky, .qr-pixel-sky, .host-head::before, .insert-coin, .host #startBtn { animation: none !important; }
+}
+@media (min-width: 1350px) { .host { padding: 24px 36px 20px; } }
+@media (max-width: 1250px) {
+  #viewLobby.host-body { grid-template-columns: minmax(230px,.8fr) minmax(340px,1.3fr); gap: 18px; }
+  #viewLobby .lobby-settings-side { grid-column: 1 / -1; }
+  #viewLobby .set-grid { grid-template-columns: repeat(4, minmax(0,1fr)); }
+}
+@media (max-width: 760px) {
+  .host { padding: 16px; }
+  #viewLobby.host-body, #viewRound.host-body { grid-template-columns: 1fr; }
+  #viewLobby .lobby-settings-side { grid-column: auto; }
+  #viewLobby .set-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
 </style>
 </head>
 <body>
@@ -145,7 +424,10 @@ body.urgent::after {
         <div class="hl-sub">ANSWER · BUILD · DOGFIGHT</div>
       </div>
     </div>
-    <div class="host-phase" id="phaseChip">LOBBY</div>
+    <div class="head-right">
+      <button type="button" class="help-btn" id="helpBtn"><span class="hb-q">?</span>HOW TO PLAY</button>
+      <div class="host-phase" id="phaseChip">LOBBY</div>
+    </div>
   </header>
 
   <!-- ===================== LOBBY ===================== -->
@@ -156,43 +438,69 @@ body.urgent::after {
       <img id="qr" src="/qr.png" alt="Join QR code" style="margin-top:18px">
       <div class="qr-url" id="qrUrl">—</div>
       <div class="qr-code" id="qrCode">····</div>
+      <div class="insert-coin">PRESS START ON YOUR PHONE</div>
     </div>
 
     <div class="roster">
       <div class="roster-head">
         <span class="rh-n" id="playerCount">0</span>
         <span class="rh-k">PLAYERS IN THE ROOM</span>
+        <div class="bot-ctl" id="botCtl" title="Stand-in pilots fill empty seats">
+          <span class="bc-k">BOTS</span>
+          <button type="button" class="st-btn" id="botMinus" aria-label="Remove a bot">−</button>
+          <span class="bc-v" id="botCount">0</span>
+          <button type="button" class="st-btn" id="botPlus" aria-label="Add a bot">+</button>
+        </div>
       </div>
       <div class="roster-grid" id="rosterGrid"></div>
       <div id="aiBankDock"></div>
       <section class="panel ai-bank-panel" id="aiBankPanel">
         <svg class="ai-pixel-sky" viewBox="0 0 91 38" aria-hidden="true" shape-rendering="crispEdges"><path d="M2 25h11v-6h11v-7h19v7h12v6h10v6H2z" fill="#608bb5"/><path d="M7 23h11v-6h10v-6h12v8h13v8H7z" fill="#a6d0ed"/><path d="M64 9h6V5h8v4h7v4h6v4H64z" fill="#a4c8e6"/><path d="M66 8h7V4h7v5h9v4H66z" fill="#dcefff"/></svg>
-        <div class="eyebrow">QUESTION BANK // AI</div>
+        <div class="eyebrow">SELECT GAME MODE</div>
         <div class="ai-tabs" role="tablist">
-          <button type="button" class="ai-tab active" id="aiTabTrivia">TRIVIA</button>
-          <button type="button" class="ai-tab" id="aiTabStudy">STUDY</button>
+          <button type="button" class="ai-tab active" id="aiTabTrivia" role="tab">TRIVIA<small>ANY TOPIC</small></button>
+          <button type="button" class="ai-tab" id="aiTabStudy" role="tab">STUDY<small>FROM A PDF</small></button>
+          <button type="button" class="ai-tab" id="aiTabArcade" role="tab">ARCADE<small>NO QUESTIONS</small></button>
         </div>
-        <div class="ai-row" id="aiTopicRow">
+
+        <div class="arcade-intro">
+          <div class="arcade-games">
+            <div class="arcade-game"><canvas data-game="rings" width="54" height="40"></canvas><b>RING RUN</b><span>FLY THROUGH</span></div>
+            <div class="arcade-game"><canvas data-game="dodge" width="54" height="40"></canvas><b>MISSILE DODGE</b><span>SLIP THEM</span></div>
+            <div class="arcade-game"><canvas data-game="canyon" width="54" height="40"></canvas><b>CANYON RUN</b><span>STAY IN</span></div>
+            <div class="arcade-game"><canvas data-game="lockon" width="54" height="40"></canvas><b>LOCK-ON</b><span>HOLD HIM</span></div>
+            <div class="arcade-game"><canvas data-game="supply" width="54" height="40"></canvas><b>SUPPLY DROP</b><span>CATCH THEM</span></div>
+          </div>
+          <ul class="arcade-rules">
+            <li>Every game is ~5 seconds, tilt only. They cycle as each pilot climbs.</li>
+            <li>Clear a level → earn a jet part. Higher levels pay rarer parts.</li>
+            <li>Part you can't use? Claim it or shove it to a neighbour for a tier bump. A timed-out crate is just scrapped.</li>
+          </ul>
+        </div>
+
+        <div class="ai-row ai-question-only" id="aiTopicRow">
           <label for="aiTopic">TRIVIA THEME</label>
           <input id="aiTopic" maxlength="180" placeholder="e.g. Space, Physics, Movies" />
         </div>
-        <div class="ai-row" id="aiFileRow" style="display:none">
+        <div class="ai-row ai-question-only" id="aiFileRow" style="display:none">
           <label for="aiPdf">LECTURE NOTES / SLIDES (PDF, MAX 8 MB)</label>
           <input id="aiPdf" type="file" accept=".pdf,application/pdf" />
         </div>
-        <div class="ai-row"><label for="aiLevel" id="aiLevelLabel">DIFFICULTY</label>
-          <select id="aiLevel"><option value="easy">EASY</option><option value="medium" selected>MEDIUM</option><option value="hard">HARD</option></select></div>
-        <div class="ai-row"><label for="aiProvider">AI MODEL</label>
+        <div class="ai-row-pair ai-question-only">
+          <div class="ai-row"><label for="aiLevel" id="aiLevelLabel">DIFFICULTY</label>
+            <select id="aiLevel"><option value="easy">EASY</option><option value="medium" selected>MEDIUM</option><option value="hard">HARD</option></select></div>
+          <div class="ai-row"><label for="aiCount">QUESTIONS</label>
+            <select id="aiCount"><option value="10">10</option><option value="20">20</option><option value="30">30</option><option value="50" selected>50</option><option value="75">75</option><option value="100">100</option></select></div>
+        </div>
+        <div class="ai-row ai-question-only"><label for="aiProvider">AI MODEL</label>
           <select id="aiProvider"><option value="grok" selected>GROK (xAI)</option><option value="gemini">GEMINI (Google)</option></select></div>
-        <div class="ai-row"><label for="aiCount">QUESTIONS TO GENERATE</label>
-          <select id="aiCount"><option value="10">10</option><option value="20">20</option><option value="30">30</option><option value="50" selected>50</option><option value="75">75</option><option value="100">100</option></select></div>
-        <button type="button" class="arcade-btn sm" id="aiGenerate"><span class="ab-top">GENERATE 50 QUESTIONS</span></button>
+        <button type="button" class="arcade-btn sm ai-question-only" id="aiGenerate"><span class="ab-top">GENERATE 50 QUESTIONS</span></button>
         <div class="ai-bank-status" id="aiBankStatus" aria-live="polite">BUILT-IN TRIVIA READY</div>
-        <div class="ai-progress" id="aiProgress" style="display:none" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="ai-progress ai-question-only" id="aiProgress" style="display:none" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
           <div class="ai-progress-track"><div id="aiProgressFill" class="ai-progress-fill"></div></div>
           <div class="ai-progress-caption"><span id="aiProgressStage">PREPARING…</span><span id="aiProgressCount">0 / 50</span></div>
         </div>
-        <div class="ai-bank-note">Create a new question bank in the lobby before your next game.</div>
+        <div class="ai-bank-note ai-question-only">Create a new question bank in the lobby before your next game.</div>
       </section>
       <div class="host-leaderboard" id="hostLobbyBoard">
         <div class="lobby-board-label">PILOT LEADERBOARD</div>
@@ -281,8 +589,12 @@ body.urgent::after {
     <div>
       <div class="eyebrow">TIME REMAINING</div>
       <div class="host-timer" id="roundClock">1:30</div>
-      <div style="margin-top:14px;font-size:17px;color:var(--text-dim)">
-        Round <span id="roundNo" class="mono">1</span> of <span id="roundTot" class="mono">3</span>
+      <div class="round-of">
+        ROUND <span id="roundNo" class="mono">1</span> OF <span id="roundTot" class="mono">3</span>
+      </div>
+      <div class="arcade-board">
+        <div class="plate-title">ARCADE LADDER</div>
+        <div class="ladder" id="ladder"></div>
       </div>
       <div class="card" style="display:none;margin-top:32px;padding:24px">
         <div class="eyebrow">NEXT CARD DRAW</div>
@@ -336,27 +648,38 @@ body.urgent::after {
   <div id="viewFight" style="display:none;flex:1;flex-direction:column">
     <div class="arena-head">
       <div class="eyebrow">DOGFIGHT</div>
-      <div class="mono" id="fightClock" style="font-size:44px;font-weight:850">1:15</div>
+      <div class="fight-clock" id="fightClock">1:15</div>
       <div class="arena-feed" id="arenaFeed"></div>
     </div>
-    <div class="arena-wrap">
-      <canvas id="arena"></canvas>
-      <div class="arena-countdown" id="arenaCountdown"></div>
+    <div class="arena-row">
+      <div class="arena-wrap">
+        <canvas id="arena"></canvas>
+        <div class="arena-countdown" id="arenaCountdown"></div>
+      </div>
+      <aside class="arena-side">
+        <div class="plate-title">PILOTS</div>
+        <div class="arena-board" id="arenaBoard"></div>
+      </aside>
     </div>
-    <div class="arena-board" id="arenaBoard"></div>
   </div>
 
   <!-- ==================== RESULTS ==================== -->
   <div id="viewResults" style="display:none;flex:1;flex-direction:column;overflow-y:auto">
-    <div class="winner-banner">
-      <div class="wb-k">RESULT</div>
-      <div class="wb-v" id="winTitle">—</div>
-      <div class="wb-r" id="winReason">—</div>
+    <div class="podium-head">
+      <div class="ph-k" id="podiumMode">FINAL STANDINGS</div>
+      <div class="ph-v">TOP GUNS</div>
     </div>
-    <div class="eyebrow" style="margin-bottom:14px">THE TABLE</div>
-    <div class="reveal-grid" id="revealGrid"></div>
-    <div class="eyebrow" style="margin:30px 0 14px">VOTE TALLY</div>
-    <div class="feed" id="tallyList" style="max-height:none"></div>
+    <div class="podium" id="podium"></div>
+    <div class="results-lower">
+      <section class="plate results-table">
+        <div class="plate-title">THE TABLE — AGENDAS REVEALED</div>
+        <div class="standings" id="revealGrid"></div>
+      </section>
+      <section class="plate results-votes">
+        <div class="plate-title">THREAT VOTE</div>
+        <div id="tallyList"></div>
+      </section>
+    </div>
   </div>
 
   <footer class="host-foot">
@@ -368,6 +691,14 @@ body.urgent::after {
     <div class="hf-hint" id="footHint">Need at least 3 players (4+ recommended).</div>
   </footer>
 
+</div>
+
+<div class="help-modal" id="helpModal" role="dialog" aria-modal="true" aria-label="How to play">
+  <div class="help-box">
+    <div class="help-head"><span>HOW TO PLAY</span>
+      <button type="button" class="help-close" id="helpClose" aria-label="Close">✕</button></div>
+    <iframe id="helpFrame" title="How to play"></iframe>
+  </div>
 </div>
 
 <script src="/static/js/skyfield.js"></script>
@@ -414,7 +745,8 @@ function handle(m) {
   if (m.t === 'state') {
     const prev = phase;
     phase = m.phase;
-    if (phase === 'lobby') exitPending = false;
+    ARCADE.on = !!m.arcade;
+    if (phase === 'lobby') { exitPending = false; podiumKey = ''; }
     endsAt = performance.now() + (m.endsIn || 0) * 1000;
 
     $('phaseChip').textContent = {
@@ -449,6 +781,17 @@ function handle(m) {
     AI_BANK.editable = (m.phase === 'lobby');
     AI_BANK.serverBusy = !!m.questionBank?.busy;
     AI_BANK.current = m.questionBank;
+    // The server is the source of truth for arcade; question tabs are local
+    // until a bank is generated, so only snap the tab when the server says arcade
+    // or when we are showing arcade but the server has left it.
+    const serverArcade = m.questionBank?.mode === 'arcade';
+    if (!AI_BANK.switching) {
+      if (serverArcade && AI_BANK.mode !== 'arcade') paintAiMode('arcade');
+      else if (!serverArcade && AI_BANK.mode === 'arcade') paintAiMode('trivia');
+    }
+    document.body.classList.toggle('is-arcade-round', !!m.arcade);
+    ARCADE.on = !!m.arcade;
+    if (m.arcadeBoard) paintLadder(m.arcadeBoard);
     document.querySelectorAll('#aiBankPanel input, #aiBankPanel select, #aiBankPanel button').forEach(el => el.disabled = !AI_BANK.editable || AI_BANK.busy || AI_BANK.serverBusy);
     const bank = m.questionBank;
     const target = Math.max(1, Number(bank?.target) || 100);
@@ -462,21 +805,28 @@ function handle(m) {
     $('aiProgressCount').textContent = count + ' / ' + target;
     if (!AI_BANK.busy || AI_BANK.serverBusy) $('aiBankStatus').textContent = bank ?
       (bank.error ? `ERROR: ${bank.error}` :
+      serverArcade ? 'ARCADE LADDER ARMED · 5 GAMES · NO API KEY NEEDED' :
       AI_BANK.serverBusy ? `GENERATING QUESTIONS · ${count}/${target} READY` :
       `${bank.title} · ${bank.count} QUESTIONS READY`) : 'BUILT-IN TRIVIA READY';
     const humans = m.players.filter(p => !p.bot).length;
-    $('startBtn').disabled = humans < 3 || mid || AI_BANK.serverBusy;
+    const seats = m.players.length;
+    $('startBtn').disabled = humans < 1 || seats < 3 || mid || AI_BANK.serverBusy;
     $('soloBtn').disabled = humans < 1 || mid || AI_BANK.serverBusy;
+    paintBots(m);
     $('lobbyEmpty').style.display = m.players.length ? 'none' : 'block';
     $('lobbyBtn').style.display = (m.phase === 'results') ? '' : 'none';
+    document.querySelector('.host-foot').classList.toggle('in-match', mid || m.phase === 'fight' || m.phase === 'intermission');
 
     if (m.phase === 'results') {
       $('footHint').textContent =
         'Back to lobby to let new people scan in, then start another game.';
     } else {
-      $('footHint').textContent = humans < 3
-        ? `${humans} phone${humans === 1 ? '' : 's'} connected. SOLO TEST fills the table with stand-ins.`
-        : `${humans} connected. Ready when you are.`;
+      const bots = seats - humans;
+      $('footHint').textContent = humans < 1
+        ? 'Waiting for the first phone to scan in.'
+        : seats < 3
+          ? `${humans} phone${humans === 1 ? '' : 's'} connected. Add bots, or SOLO TEST fills the table for you.`
+          : `${humans} phone${humans === 1 ? '' : 's'}${bots ? ` + ${bots} bot${bots === 1 ? '' : 's'}` : ''} · ${seats} seats. Ready when you are.`;
     }
 
     if (m.phase === 'lobby' || m.phase === 'calling' || m.phase === 'roles') view('Lobby');
@@ -542,6 +892,21 @@ function handle(m) {
     while ($('feed').children.length > 6) $('feed').lastChild.remove();
   }
 
+  if (m.t === 'arcade_board') paintLadder(m.rows);
+
+  if (m.t === 'arcade_fx' && m.kind !== 'start') {
+    const el = document.createElement('div');
+    el.className = 'feed-item';
+    el.innerHTML = m.kind === 'clear'
+      ? `<b></b> <span style="color:var(--good)">cleared level ${m.level}</span>`
+      : `<b></b> <span style="color:var(--danger)">missed level ${m.level}</span>`;
+    el.querySelector('b').textContent = m.name;
+    $('feed').prepend(el);
+    while ($('feed').children.length > 6) $('feed').lastChild.remove();
+    flashSeat(m.pid, m.kind === 'clear' ? 'gain' : 'hit');
+    ARCADE.flash[m.pid] = m.kind === 'clear' ? 'flash-up' : 'flash-down';
+  }
+
   if (m.t === 'vote_cast') {
     $('votesIn').textContent = m.n;
     $('votesOf').textContent = m.of;
@@ -556,36 +921,122 @@ function handle(m) {
 }
 
 // Authoritative arena frames from the multiplayer server.
-const ARENA = { frame: null, jets: [], w: 1600, h: 900, sprites: {} };
+const ARENA = { frame: null, jets: [], w: 1600, h: 900, sprites: {}, shadows: {},
+                bg: null, bgKey: '', trails: {}, fx: [], threat: '', frameNo: 0,
+                clouds: null };
 function arenaSetup(m) {
   ARENA.jets = m.jets || [];
   ARENA.sprites = {};
+  ARENA.shadows = {};
+  ARENA.trails = {};
+  ARENA.fx = [];
+  ARENA.threat = m.threat || '';
   ARENA.w = (m.arena || [1600, 900])[0];
   ARENA.h = (m.arena || [1600, 900])[1];
   ARENA.frame = null;
   $('arenaCountdown').textContent = 'PREPARE FOR DOGFIGHT';
+  $('arenaCountdown').classList.add('on');
   $('arenaBoard').innerHTML = '';
 }
 function arenaFrame(m) {
   ARENA.frame = m;
-  if (m.running) $('arenaCountdown').textContent = '';
+  ARENA.frameNo++;
+  if (m.running) { $('arenaCountdown').textContent = ''; $('arenaCountdown').classList.remove('on'); }
   $('fightClock').textContent = fmt(m.left || 0);
-  const roster = new Map(ARENA.jets.map(j => [j.pid, j]));
-  $('arenaBoard').innerHTML = (m.jets || []).map(j => {
-    const name = roster.get(j.pid)?.name || j.name || 'PILOT';
-    return `<div class="arena-pilot"><b>${name}</b> · ${Math.round(j.hp)}/${Math.round(j.maxHp)} HP · ${j.kills} KILLS${j.alive ? '' : ' · RESPAWNING'}</div>`;
-  }).join('');
-  for (const e of (m.events || [])) {
-    if (e.kind === 'kill') arenaFeed(`${e.killer || 'UNKNOWN'} DOWNED ${e.victim}`, 'kill');
+
+  // contrails: remember where each jet has been
+  for (const j of m.jets || []) {
+    const t = ARENA.trails[j.pid] || (ARENA.trails[j.pid] = []);
+    if (!j.alive) { t.length = 0; continue; }
+    t.push([j.x, j.y]);
+    if (t.length > 14) t.shift();
   }
+  for (const e of (m.events || [])) {
+    if (e.kind === 'kill') {
+      ARENA.fx.push({ kind: 'boom', x: e.x, y: e.y, t: 0 });
+      arenaFeed(`<b>${esc(e.killer || 'UNKNOWN')}</b> <span style="color:var(--danger)">downed</span> <b>${esc(e.victim)}</b>`, 'kill');
+    } else if (e.kind === 'hit') {
+      ARENA.fx.push({ kind: 'spark', x: e.x, y: e.y, t: 0 });
+    } else if (e.kind === 'fault') {
+      arenaFeed(`<b>${esc(e.name)}</b> <span style="color:var(--warn)">${esc(e.text)}</span>`, 'fault');
+    }
+  }
+
+  // the pilot cards only need a few updates a second
+  if (ARENA.frameNo % 4 !== 1) return;
+  const roster = new Map(ARENA.jets.map(j => [j.pid, j]));
+  const rows = [...(m.jets || [])].sort((a, b) => b.kills - a.kills || b.hp - a.hp);
+  $('arenaBoard').innerHTML = rows.map(j => {
+    const info = roster.get(j.pid) || {};
+    const pct = Math.max(0, Math.min(1, j.hp / (j.maxHp || 1)));
+    const lit = Math.ceil(pct * 10);
+    const col = pct < .3 ? '#e5484d' : pct < .6 ? '#f5a524' : '#6ef0a8';
+    const segs = Array.from({ length: 10 }, (_, k) =>
+      `<i style="background:${k < lit && j.alive ? col : '#1a2030'}"></i>`).join('');
+    return `<div class="pilot-card${j.alive ? '' : ' down'}${j.pid === ARENA.threat ? ' threat' : ''}">
+      ${avatarSVG(info.avatar || 'fox', 30, { bg: '#0b0d14' })}
+      <div class="pc-mid"><div class="pc-name">${esc(info.name || j.name || 'PILOT')}</div>
+        <div class="pc-hp">${j.alive ? segs : '<span class="pc-resp">RESPAWNING</span>'}</div></div>
+      <div class="pc-k"><b>${j.kills}</b><span>KILLS</span></div>
+    </div>`;
+  }).join('');
 }
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function arenaFeed(html, kind = '') {
   const el = document.createElement('div');
   el.className = 'feed-item' + (kind ? ' ' + kind : '');
   el.innerHTML = html;
   $('arenaFeed').prepend(el);
-  while ($('arenaFeed').children.length > 5) $('arenaFeed').lastChild.remove();
+  while ($('arenaFeed').children.length > 4) $('arenaFeed').lastChild.remove();
 }
+
+/* The battlefield is a clean tactical display: deep navy, a faint grid, and
+   soft pixel clouds drifting underneath the jets. The static part is drawn
+   once per size to an offscreen canvas, so each frame is a single blit. */
+function arenaBackground(w, h, dpr) {
+  const key = w + 'x' + h + '@' + dpr;
+  if (ARENA.bgKey === key) return ARENA.bg;
+  const cv = document.createElement('canvas');
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  const c = cv.getContext('2d');
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.fillStyle = '#0d1a30'; c.fillRect(0, 0, w, h);
+  const cell = Math.max(40, Math.round(w / 24));
+  for (let y = 0; y < h; y += cell) for (let x = 0; x < w; x += cell) {
+    if (((x / cell) + (y / cell)) % 2 === 0) { c.fillStyle = '#0f1e37'; c.fillRect(x, y, cell, cell); }
+  }
+  for (let x = 0, i = 0; x <= w; x += cell, i++) {
+    c.fillStyle = i % 4 === 0 ? 'rgba(110,160,255,.12)' : 'rgba(110,160,255,.05)';
+    c.fillRect(Math.round(x), 0, 1, h);
+  }
+  for (let y = 0, i = 0; y <= h; y += cell, i++) {
+    c.fillStyle = i % 4 === 0 ? 'rgba(110,160,255,.12)' : 'rgba(110,160,255,.05)';
+    c.fillRect(0, Math.round(y), w, 1);
+  }
+  // corner brackets frame the play space
+  c.fillStyle = 'rgba(245,165,36,.55)';
+  const L = 26, T = 3;
+  [[8, 8, 1, 1], [w - 8, 8, -1, 1], [8, h - 8, 1, -1], [w - 8, h - 8, -1, -1]].forEach(([x, y, sx, sy]) => {
+    c.fillRect(sx > 0 ? x : x - L, sy > 0 ? y : y - T, L, T);
+    c.fillRect(sx > 0 ? x : x - T, sy > 0 ? y : y - L, T, L);
+  });
+  ARENA.bg = cv; ARENA.bgKey = key;
+  return cv;
+}
+
+/** A dark silhouette of a sprite, for the drop shadow. */
+function spriteShadow(spr) {
+  const cv = document.createElement('canvas');
+  cv.width = spr.width; cv.height = spr.height;
+  const c = cv.getContext('2d');
+  c.drawImage(spr, 0, 0);
+  c.globalCompositeOperation = 'source-in';
+  c.fillStyle = 'rgba(0,0,0,.5)';
+  c.fillRect(0, 0, cv.width, cv.height);
+  return cv;
+}
+
+const ARENA_CLOUD = ['..XXXX..', '.XXXXXXX', 'XXXXXXXX', '.XXXXXX.'];
 function drawArena() {
   const cv = $('arena');
   const rect = cv.getBoundingClientRect();
@@ -596,38 +1047,114 @@ function drawArena() {
     cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
   }
   const c = cv.getContext('2d');
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.drawImage(arenaBackground(w, h, dpr), 0, 0);
   c.setTransform(dpr, 0, 0, dpr, 0, 0);
-  c.clearRect(0, 0, w, h);
-  // Overhead pixel-art grassland for the host; phones keep the sky/horizon cockpit.
-  c.fillStyle = '#568e38'; c.fillRect(0, 0, w, h);
-  for (let y = 0; y < h; y += 20) for (let x = 0; x < w; x += 20) {
-    const n = ((Math.floor(x/20) * 53 + Math.floor(y/20) * 97) % 13);
-    c.fillStyle = n < 3 ? '#46792e' : n > 10 ? '#6da64a' : '#568e38';
-    c.fillRect(x, y, 20, 20);
-    if (n % 4 === 0) {c.fillStyle='#82b857';c.fillRect(x+4,y+12,3,3);c.fillRect(x+12,y+4,3,3);}
+  c.imageSmoothingEnabled = false;
+
+  // slow pixel clouds underneath everything, for a sense of altitude
+  if (!ARENA.clouds) {
+    ARENA.clouds = Array.from({ length: 6 }, () => ({
+      x: Math.random(), y: Math.random(), s: 6 + Math.floor(Math.random() * 5), v: .004 + Math.random() * .006 }));
   }
+  c.fillStyle = 'rgba(200,220,255,.05)';
+  for (const cl of ARENA.clouds) {
+    cl.x = (cl.x + cl.v / 60) % 1.2;
+    const ox = (cl.x - .1) * w, oy = cl.y * h;
+    for (let r = 0; r < ARENA_CLOUD.length; r++)
+      for (let k = 0; k < ARENA_CLOUD[r].length; k++)
+        if (ARENA_CLOUD[r][k] === 'X') c.fillRect(Math.round(ox + k * cl.s), Math.round(oy + r * cl.s), cl.s, cl.s);
+  }
+
   if (!ARENA.frame) return;
   const sx = w / ARENA.w, sy = h / ARENA.h;
+
+  // contrails, broken where the jet wrapped across an edge
+  for (const pid in ARENA.trails) {
+    const t = ARENA.trails[pid];
+    for (let i = 1; i < t.length; i++) {
+      const [x0, y0] = t[i - 1], [x1, y1] = t[i];
+      if (Math.abs(x1 - x0) > 200 || Math.abs(y1 - y0) > 200) continue;
+      c.fillStyle = `rgba(220,232,255,${(i / t.length * .35).toFixed(2)})`;
+      c.fillRect(Math.round(x1 * sx) - 1, Math.round(y1 * sy) - 1, 3, 3);
+    }
+  }
+
   for (const b of ARENA.frame.bullets || []) {
-    c.fillStyle = '#ffdc7a'; c.fillRect(b.x * sx - 2, b.y * sy - 2, 4, 4);
+    const x = Math.round(b.x * sx), y = Math.round(b.y * sy);
+    c.fillStyle = '#fff3c4'; c.fillRect(x - 2, y - 2, 4, 4);
+    c.fillStyle = 'rgba(255,212,138,.45)'; c.fillRect(x - 3, y - 3, 6, 6);
   }
   for (const m of ARENA.frame.missiles || []) {
-    c.fillStyle = '#f05f64'; c.fillRect(m.x * sx - 3, m.y * sy - 3, 6, 6);
+    const x = Math.round(m.x * sx), y = Math.round(m.y * sy);
+    c.fillStyle = '#ff6b70'; c.fillRect(x - 3, y - 3, 6, 6);
+    c.fillStyle = '#ffd48a'; c.fillRect(x - 1, y - 1, 2, 2);
   }
+
   const roster = new Map(ARENA.jets.map(j => [j.pid, j]));
   for (const j of ARENA.frame.jets || []) {
     if (!j.alive) continue;
-    c.save(); c.translate(j.x * sx, j.y * sy);
-    c.rotate((j.heading + 90) * Math.PI / 180);
-    c.fillStyle = '#d4deef';
-    c.beginPath(); c.moveTo(0, -21); c.lineTo(-9, 14); c.lineTo(0, 8); c.lineTo(9, 14); c.closePath(); c.fill();
-    c.fillStyle = '#8095b8'; c.fillRect(-5, -5, 10, 22);
-    c.fillStyle = '#6bc0ff'; c.fillRect(-21, 3, 42, 5);
-    c.fillStyle = '#7d8eac'; c.fillRect(-10, 11, 6, 7); c.fillRect(4, 11, 6, 7);
+    if (!ARENA.sprites[j.pid]) {
+      const info = roster.get(j.pid);
+      ARENA.sprites[j.pid] = jetSprite(info && info.loadout ? info.loadout.parts : null, 4);
+      ARENA.shadows[j.pid] = spriteShadow(ARENA.sprites[j.pid]);
+    }
+    const spr = ARENA.sprites[j.pid];
+    const x = Math.round(j.x * sx), y = Math.round(j.y * sy);
+    const rot = (j.heading + 90) * Math.PI / 180;
+    c.save(); c.translate(x + 5, y + 7); c.rotate(rot); c.globalAlpha = .55;
+    c.drawImage(ARENA.shadows[j.pid], -spr.width / 2, -spr.height / 2);
     c.restore();
-    c.textAlign = 'center'; c.font = 'bold 13px monospace'; c.fillStyle = '#eaf0ff';
-    c.fillText(`${roster.get(j.pid)?.name || j.name || 'PILOT'} · ${Math.round(j.hp)} HP`, j.x * sx, j.y * sy - 28);
+    c.save(); c.translate(x, y); c.rotate(rot);
+    c.drawImage(spr, -spr.width / 2, -spr.height / 2);
+    c.restore();
+
+    // the marked Threat wears a pulsing red reticle
+    if (j.pid === ARENA.threat) {
+      const r = 30 + (Math.floor(performance.now() / 250) % 2) * 3;
+      c.fillStyle = '#e5484d';
+      [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([dx, dy]) => {
+        c.fillRect(x + dx * r - (dx > 0 ? 8 : 0), y + dy * r - (dy > 0 ? 2 : 0), 8, 2);
+        c.fillRect(x + dx * r - (dx > 0 ? 2 : 0), y + dy * r - (dy > 0 ? 8 : 0), 2, 8);
+      });
+    }
+
+    // name plate + segmented hull bar, kept small and tidy
+    const name = roster.get(j.pid)?.name || j.name || 'PILOT';
+    c.font = '8px "Press Start 2P", monospace';
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    const tw = Math.ceil(c.measureText(name).width) + 10;
+    c.fillStyle = 'rgba(5,7,12,.82)'; c.fillRect(x - tw / 2, y - 54, tw, 13);
+    c.fillStyle = '#fff'; c.fillText(name, x, y - 47);
+    const pct = Math.max(0, Math.min(1, j.hp / (j.maxHp || 1)));
+    for (let k = 0; k < 8; k++) {
+      c.fillStyle = k < Math.ceil(pct * 8)
+        ? (pct < .3 ? '#e5484d' : pct < .6 ? '#f5a524' : '#6ef0a8') : 'rgba(5,7,12,.8)';
+      c.fillRect(x - 24 + k * 6, y - 38, 5, 4);
+    }
   }
+
+  // hit sparks and kill explosions
+  ARENA.fx = ARENA.fx.filter(f => {
+    f.t += 1 / 60;
+    const x = Math.round(f.x * sx), y = Math.round(f.y * sy);
+    if (f.kind === 'spark') {
+      if (f.t > .22) return false;
+      c.fillStyle = `rgba(255,236,170,${(1 - f.t / .22).toFixed(2)})`;
+      const r = 3 + f.t * 40;
+      c.fillRect(x - r, y - 1, r * 2, 2); c.fillRect(x - 1, y - r, 2, r * 2);
+      return true;
+    }
+    if (f.t > .8) return false;
+    const k = f.t / .8, r = 6 + k * 46;
+    c.fillStyle = `rgba(255,140,60,${(1 - k).toFixed(2)})`;
+    for (let i = 0; i < 12; i++) {
+      const a = i / 12 * Math.PI * 2;
+      c.fillRect(Math.round(x + Math.cos(a) * r) - 3, Math.round(y + Math.sin(a) * r) - 3, 6, 6);
+    }
+    if (k < .4) { c.fillStyle = `rgba(255,244,200,${(1 - k / .4).toFixed(2)})`; c.fillRect(x - 12, y - 12, 24, 24); }
+    return true;
+  });
 }
 
 const CHEAT_TARGET = 0.60;
@@ -685,6 +1212,8 @@ function paintCircle(ring) {
   const el = $('circle');
   const n = ring.length;
 
+  const dense = n > 6;
+  el.classList.toggle('dense', dense);
   el.innerHTML = ring.map((p, i) => {
     // start at the top and go clockwise, so the screen matches the room
     const a = (-90 + (360 / n) * i) * Math.PI / 180;
@@ -696,12 +1225,12 @@ function paintCircle(ring) {
       return `<span class="s-bay" style="background:${c}"></span>`;
     }).join('');
     return `<div class="seat" data-pid="${p.pid}" style="left:${x}%;top:${y}%">
-      <div class="s-av">${avatarSVG(p.avatar || 'fox', 34, { bg: '#0b0d14' })}</div>
+      <div class="s-av">${avatarSVG(p.avatar || 'fox', dense ? 26 : 34, { bg: '#0b0d14' })}</div>
       <div class="s-name">${p.name}</div>
-      <div class="s-jet">${jetSVG(p.parts || null, 54)}</div>
+      <div class="s-jet">${jetSVG(p.parts || null, dense ? 36 : 54)}</div>
       <div class="s-bays">${bays}</div>
       <div class="s-meta"><span class="s-rating">${p.rating || 0}</span>
-        · ${p.correct || 0} ok</div>
+        · ${ARCADE.on ? `<span class="s-lvl">LV ${p.level || 1}</span>` : `${p.correct || 0} OK`}</div>
     </div>`;
   }).join('');
 
@@ -800,28 +1329,62 @@ function paintScores(players) {
     </div>`).join('');
 }
 
+/* ---------------------------- podium ---------------------------- */
+let podiumKey = '';
 function paintResults(m) {
-  const r = m.reveal || {};
-  $('winTitle').textContent = m.winner === 'imposter' ? 'IMPOSTER WINS' : 'CREW WINS';
-  $('winTitle').style.color = m.winner === 'imposter' ? 'var(--danger)' : 'var(--good)';
-  $('winReason').textContent = r.reason || '';
+  const rows = (m.fightStandings || []).slice();
+  const key = JSON.stringify(rows.map(r => [r.pid, r.final]));
+  if (key === podiumKey) return;           // state repeats; don't replay the show
+  podiumKey = key;
+  rows.sort((a, b) => (b.final ?? b.score) - (a.final ?? a.score));
+  const arcade = rows.some(r => r.mode === 'arcade') || ARCADE.on;
+  $('podiumMode').textContent = arcade ? 'ARCADE · FINAL STANDINGS' : 'FINAL STANDINGS';
 
-  $('revealGrid').innerHTML = (r.roles || []).map(x => `
-    <div class="card reveal-card" style="border-color:${x.color}44">
-      <div style="display:flex;align-items:center;gap:12px">
-        ${avatarSVG(x.avatar || 'fox', 40, { bg: '#0b0d14' })}
-        <div>
-          <div class="rv-role" style="color:${x.color}">${x.role}</div>
-          <div class="rv-name">${x.name}</div>
-        </div>
+  const pts = r => Math.round(r.final ?? r.score ?? 0);
+  const parts = r => r.loadout && r.loadout.parts ? r.loadout.parts : null;
+  const breakdown = r => {
+    const bits = [];
+    bits.push(`${arcade ? 'ARCADE' : 'QUIZ'} ${Math.round(r.matchPoints || 0)}`);
+    bits.push(`DOGFIGHT ${Math.round(r.fightScore ?? r.score ?? 0)}`);
+    if (r.bonus) bits.push(`AGENDA +${r.bonus}`);
+    return bits.join(' · ');
+  };
+
+  // 2nd, 1st, 3rd — the classic podium order, tallest in the middle
+  const order = [1, 0, 2].filter(i => rows[i]);
+  $('podium').innerHTML = order.map(i => {
+    const r = rows[i], place = i + 1;
+    return `<div class="pod pod-${place}" style="animation-delay:${[0, .35, .7][place - 1] + (place === 1 ? .35 : 0)}s">
+      ${place === 1 ? '<div class="pod-crown" aria-hidden="true"></div>' : ''}
+      <div class="pod-av">${avatarSVG(r.avatar || 'fox', place === 1 ? 84 : 64, { bg: '#0b0d14' })}</div>
+      <div class="pod-name">${esc(r.name)}</div>
+      <div class="pod-jet">${jetSVG(parts(r), place === 1 ? 70 : 54)}</div>
+      <div class="pod-pts"><b>${pts(r)}</b><span>PTS</span></div>
+      <div class="pod-why">${breakdown(r)}</div>
+      <div class="pod-step"><span>${place}</span></div>
+    </div>`;
+  }).join('') || '<div class="pod-empty">NO RESULTS</div>';
+
+  $('revealGrid').innerHTML = rows.map((r, i) => `
+    <div class="st-row${i < 3 ? ' top' : ''}">
+      <span class="st-no">${String(i + 1).padStart(2, '0')}</span>
+      ${avatarSVG(r.avatar || 'fox', 32, { bg: '#0b0d14' })}
+      <div class="st-mid">
+        <div class="st-name">${esc(r.name)}</div>
+        <div class="st-agenda" style="color:${r.agendaColor || 'var(--text-mute)'}">${esc(r.agendaName || '')}
+          <span>${esc(r.agendaNote || '')}</span></div>
       </div>
-      <div class="rv-stat">${x.lines} lines cleared</div>
+      <div class="st-stats">${r.kills || 0} K · ${r.deaths || 0} D${arcade && r.arcadeLevel ? ` · LV ${r.arcadeLevel}` : ''}</div>
+      <div class="st-pts">${pts(r)}</div>
     </div>`).join('');
 
-  $('tallyList').innerHTML = (r.tally || []).map(t => `
-    <div class="feed-item"><b>${t.name}</b>
-      <span style="color:var(--text-mute)"> — ${t.votes} vote${t.votes === 1 ? '' : 's'}</span></div>`).join('')
-    || '<div class="feed-item" style="color:var(--text-mute)">No votes cast.</div>';
+  const tally = (m.reveal && m.reveal.tally) || [];
+  const most = Math.max(1, ...tally.map(t => t.votes));
+  $('tallyList').innerHTML = tally.map(t => `
+    <div class="vt-row"><span class="vt-name">${esc(t.name)}</span>
+      <span class="vt-bar"><i style="width:${Math.round(t.votes / most * 100)}%"></i></span>
+      <span class="vt-n">${t.votes}</span></div>`).join('')
+    || '<div class="vt-none">NO VOTES CAST</div>';
 }
 
 /* ------------------------- match settings ------------------------- */
@@ -904,17 +1467,127 @@ function hostReturnLobby() {
 $('lobbyBtn').onclick = hostReturnLobby;
 
 /* Grok question bank: host-only setup. API key never appears in the browser. */
-const AI_BANK = { mode: 'trivia', busy: false, serverBusy: false, editable: true, current: null };
-function chooseAiMode(mode) {
+const AI_BANK = { mode: 'trivia', busy: false, serverBusy: false, editable: true, current: null, switching: false };
+const ARCADE = { on: false, flash: {} };
+
+/** Repaint the tabs and form for a mode, without telling the server. */
+function paintAiMode(mode) {
   AI_BANK.mode = mode;
   $('aiTabTrivia').classList.toggle('active', mode === 'trivia');
   $('aiTabStudy').classList.toggle('active', mode === 'study');
+  $('aiTabArcade').classList.toggle('active', mode === 'arcade');
+  $('aiBankPanel').classList.toggle('is-arcade', mode === 'arcade');
   $('aiTopicRow').style.display = mode === 'trivia' ? '' : 'none';
   $('aiFileRow').style.display = mode === 'study' ? '' : 'none';
-  $('aiLevelLabel').textContent = mode === 'study' ? 'COMFORTABILITY LEVEL' : 'DIFFICULTY';
+  // Study asks how comfortable the class is with the material instead of a
+  // difficulty. Same easy/medium/hard values go to the server: shaky = easier
+  // questions, confident = harder ones.
+  $('aiLevelLabel').textContent = mode === 'study' ? 'COMFORT LEVEL' : 'DIFFICULTY';
+  const labels = mode === 'study'
+    ? { easy: 'SHAKY — EASIER QUESTIONS', medium: 'STEADY — MIXED', hard: 'CONFIDENT — HARDER QUESTIONS' }
+    : { easy: 'EASY', medium: 'MEDIUM', hard: 'HARD' };
+  [...$('aiLevel').options].forEach(o => { o.textContent = labels[o.value] || o.textContent; });
+  if (mode === 'arcade') drawArcadePreviews();
+}
+
+/**
+ * Pick a tab. Arcade is a server-side switch — it needs no generation, so
+ * choosing it arms the next match immediately. Leaving arcade for a question
+ * tab tells the server to fall back to the built-in deck until a new bank is
+ * generated.
+ */
+async function chooseAiMode(mode) {
+  if (!AI_BANK.editable || AI_BANK.serverBusy) return;
+  const wasArcade = AI_BANK.current?.mode === 'arcade';
+  paintAiMode(mode);
+  if (mode !== 'arcade' && !wasArcade) return;
+  AI_BANK.switching = true;
+  const form = new FormData();
+  form.append('mode', mode === 'arcade' ? 'arcade' : 'default');
+  try {
+    const res = await fetch(`/api/room/${encodeURIComponent(ROOM)}/mode`,
+      { method: 'POST', body: form, headers: { 'X-Scramble-Host-Token': HOST_TOKEN } });
+    const data = await res.json();
+    if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Could not switch mode');
+  } catch (e) {
+    $('aiBankStatus').textContent = `ERROR: ${e.message}`;
+    paintAiMode(wasArcade ? 'arcade' : 'trivia');
+  } finally {
+    AI_BANK.switching = false;
+  }
 }
 $('aiTabTrivia').onclick = () => chooseAiMode('trivia');
 $('aiTabStudy').onclick = () => chooseAiMode('study');
+$('aiTabArcade').onclick = () => chooseAiMode('arcade');
+
+/* Tiny pixel previews of each game on the arcade tab, so the host can see
+   what they are signing the room up for. Drawn once per tab switch. */
+function drawArcadePreviews() {
+  document.querySelectorAll('.arcade-game canvas').forEach(cv => {
+    const c = cv.getContext('2d');
+    c.imageSmoothingEnabled = false;
+    c.fillStyle = '#05070c'; c.fillRect(0, 0, 54, 40);
+    c.fillStyle = 'rgba(62,143,255,.25)';
+    for (let y = 24; y < 40; y += 5) c.fillRect(0, y, 54, 1);
+    const jet = (x, y, col) => {
+      c.fillStyle = col;
+      c.fillRect(x, y, 1, 3); c.fillRect(x - 1, y + 2, 3, 2);
+      c.fillRect(x - 4, y + 4, 9, 1); c.fillRect(x - 2, y + 5, 5, 1);
+    };
+    const g = cv.dataset.game;
+    if (g === 'rings') {
+      c.strokeStyle = '#f5a524'; c.lineWidth = 2; c.strokeRect(19, 6, 16, 16);
+      c.strokeStyle = 'rgba(110,240,168,.5)'; c.lineWidth = 1; c.strokeRect(24, 10, 7, 7);
+      jet(27, 28, '#c3cde4');
+    } else if (g === 'dodge') {
+      c.fillStyle = '#ff6b70'; c.fillRect(14, 6, 2, 7); c.fillRect(36, 12, 2, 7);
+      c.fillStyle = 'rgba(245,165,36,.5)'; c.fillRect(14, 1, 2, 5); c.fillRect(36, 6, 2, 5);
+      jet(26, 28, '#6ef0a8');
+    } else if (g === 'canyon') {
+      c.fillStyle = '#2b1a12'; c.fillRect(0, 0, 54, 40);
+      for (let y = 0; y < 40; y += 4) {
+        const cx = 27 + Math.round(Math.sin(y / 7) * 8);
+        c.fillStyle = '#7a4a28'; c.fillRect(0, y, cx - 9, 4); c.fillRect(cx + 9, y, 54, 4);
+        c.fillStyle = '#d98a4a'; c.fillRect(cx - 10, y, 1, 4); c.fillRect(cx + 9, y, 1, 4);
+      }
+      jet(27, 30, '#c3cde4');
+    } else if (g === 'supply') {
+      c.fillStyle = '#e8e8ea'; c.fillRect(12, 4, 10, 2);
+      c.fillStyle = '#b07c22'; c.fillRect(14, 9, 6, 6);
+      c.fillStyle = '#2a2f3d'; c.fillRect(36, 14, 5, 7);
+      c.fillStyle = '#e5484d'; c.fillRect(36, 16, 5, 1);
+      jet(20, 28, '#6ef0a8');
+    } else {
+      jet(30, 10, '#ff6b70');
+      c.strokeStyle = '#ffd48a'; c.lineWidth = 1;
+      [[22, 6], [38, 6], [22, 20], [38, 20]].forEach(([x, y], i) => {
+        c.beginPath();
+        c.moveTo(x + (i % 2 ? -4 : 4), y + .5); c.lineTo(x + .5, y + .5);
+        c.lineTo(x + .5, y + (i < 2 ? 4 : -4)); c.stroke();
+      });
+    }
+  });
+}
+
+/** The arcade ladder on the round screen: who is highest, and on what game. */
+function paintLadder(rows) {
+  const el = $('ladder');
+  if (!el || !rows) return;
+  const max = 12;
+  el.innerHTML = rows.map((r, i) => {
+    const bars = Array.from({ length: max }, (_, k) =>
+      `<i class="${k < r.level ? 'on' : ''}"></i>`).join('');
+    const fx = ARCADE.flash[r.pid] || '';
+    return `<div class="ladder-row ${fx}">
+      <span class="lr-no">${String(i + 1).padStart(2, '0')}</span>
+      ${avatarSVG(r.avatar || 'fox', 26, { bg: '#0b0d14' })}
+      <span><span class="lr-name"></span><span class="lr-game">${r.game}${r.bot ? ' · BOT' : ''}</span></span>
+      <span class="lr-lvl">${bars}<span class="lr-num">${r.level}</span></span>
+    </div>`;
+  }).join('');
+  el.querySelectorAll('.lr-name').forEach((n, i) => { n.textContent = rows[i].name; });
+  ARCADE.flash = {};
+}
 $('aiCount').onchange = () => { $('aiGenerate').querySelector('.ab-top').textContent = `GENERATE ${$('aiCount').value} QUESTIONS`; };
 $('aiGenerate').onclick = async () => {
   if (!AI_BANK.editable || AI_BANK.busy || AI_BANK.serverBusy || !HOST_TOKEN) return;
@@ -949,13 +1622,60 @@ $('aiGenerate').onclick = async () => {
   }
 };
 
+/* ------------------------- bots ------------------------- */
+const BOTS = { n: 0, max: 11, seats: 12 };
+function paintBots(m) {
+  BOTS.n = m.lobbyBots || 0;
+  BOTS.max = m.maxBots || 11;
+  BOTS.seats = m.maxSeats || 12;
+  const humans = (m.players || []).filter(p => !p.bot).length;
+  const editable = m.phase === 'lobby';
+  $('botCount').textContent = BOTS.n;
+  $('botMinus').disabled = !editable || BOTS.n <= 0;
+  $('botPlus').disabled = !editable || BOTS.n >= BOTS.max || humans + BOTS.n >= BOTS.seats;
+  $('botCtl').classList.toggle('locked', !editable);
+}
+function setBots(n) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ t: 'bots', n }));
+}
+$('botMinus').onclick = () => setBots(BOTS.n - 1);
+$('botPlus').onclick = () => setBots(BOTS.n + 1);
+
+/* --------------------- how to play ---------------------- */
+function openHelp() {
+  const frame = $('helpFrame');
+  if (!frame.src) frame.src = '/rules?embed=1';
+  $('helpModal').classList.add('on');
+  $('helpClose').focus();
+}
+function closeHelp() { $('helpModal').classList.remove('on'); $('helpBtn').focus(); }
+$('helpBtn').onclick = openHelp;
+$('helpClose').onclick = closeHelp;
+$('helpModal').addEventListener('click', e => { if (e.target === $('helpModal')) closeHelp(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('helpModal').classList.contains('on')) closeHelp(); });
+
 const hostLogo = document.querySelector('.host-logo');
 hostLogo.style.cursor = 'pointer';
 hostLogo.setAttribute('role', 'button');
 hostLogo.setAttribute('tabindex', '0');
-hostLogo.setAttribute('aria-label', 'Return to lobby');
-hostLogo.onclick = hostReturnLobby;
-hostLogo.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); hostReturnLobby(); } };
+hostLogo.setAttribute('aria-label', 'Back to the start screen');
+hostLogo.title = 'Back to the start screen';
+/* The logo leaves the room entirely and goes back to HOST / JOIN. Players
+   still connected would be stranded, so ask first if anyone is here. */
+function hostGoHome() {
+  const anyone = CIRCLE.seats.length || Number($('playerCount').textContent) > 0;
+  if (phase !== 'lobby' || anyone) {
+    const msg = phase !== 'lobby'
+      ? 'Leave this room? The match in progress will end for everyone.'
+      : 'Leave this room and go back to the start screen? Connected phones will need a new code.';
+    if (!window.confirm(msg)) return;
+  }
+  try { if (ws && ws.readyState === WebSocket.OPEN && phase !== 'lobby') ws.send(JSON.stringify({ t: 'reset' })); } catch (e) {}
+  location.href = '/';
+}
+hostLogo.onclick = hostGoHome;
+hostLogo.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); hostGoHome(); } };
 startHero($('logoJet'));
 
 function fmt(s) {

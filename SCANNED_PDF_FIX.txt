@@ -1,9 +1,0 @@
-Scanned PDF study mode fix
-
-- The uploaded IntroToElec.pdf is 9 pages of images and contains no text layer.
-- Text PDFs still use fast extraction with pypdf.
-- Image-only PDFs (up to 35 pages) are rendered using PyMuPDF and read with Grok vision.
-- Results are used to generate Study mode questions with their answer keys.
-- The Windows launcher now installs/checks PyMuPDF automatically.
-- Tested using the user's nine-page PDF with a mocked Grok response; 17 tests passed.
-- Live xAI API calls still need verification with a real key.

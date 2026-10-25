@@ -8,7 +8,7 @@
 <title>SCRAMBLE</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
@@ -76,10 +76,20 @@
     <div class="lobby-board-label">PILOT LEADERBOARD</div>
     <div id="playerLobbyRanks" class="lobby-ranks"></div>
   </div>
-  <button class="btn ghost" id="changeBtn" style="margin-top:22px;width:auto;padding:13px 24px;font-size:12.5px">
+  <button type="button" class="howto-btn sm" id="helpBtn">
+    <span class="hb-q">?</span><span class="hb-t">HOW TO PLAY</span><span class="hb-a">→</span>
+  </button>
+  <button class="btn ghost" id="changeBtn" style="margin-top:12px;width:auto;padding:13px 24px;font-size:12.5px">
     CHANGE NAME OR FACE
   </button>
 </section>
+
+<!-- how to play, without leaving the room (leaving would drop the socket) -->
+<div class="help-sheet" id="helpModal" role="dialog" aria-modal="true" aria-label="How to play">
+  <div class="help-sheet-head"><span>HOW TO PLAY</span>
+    <button type="button" class="help-close" id="helpClose" aria-label="Close">✕</button></div>
+  <iframe id="helpFrame" title="How to play"></iframe>
+</div>
 
 <!-- ==================== PHASE CONTROLS ======================= -->
 <section class="screen phase-brief" id="s-phase-brief">
@@ -192,10 +202,11 @@
       <li><span class="dot"></span><div><b>Tap</b> one of the four answers. Tilting does not select answers.</div></li>
       <li><span class="dot"></span><div><b>Slide left/right</b> while holding the phone upright to pass to your left/right neighbor.</div></li>
       <li><span class="dot"></span><div><b>Or tap</b> the left/right neighbor to pass.</div></li>
-      <li><span class="dot"></span><div><b>Shake</b> to reroll (twice per round). <b>Rotate</b> the phone to install a new aircraft part, or use the tap fallback.</div></li>
+      <li><span class="dot"></span><div><b>Shake</b> to reroll (twice per round). <b>Rotate</b> the phone 50° to install a new aircraft part (quiz and arcade), or use the tap fallback.</div></li>
     </ul>
     <div class="gest-head">WHEN THINGS GO WRONG</div>
     <ul>
+      <li><span class="dot"></span><div><b>Any 3 right answers</b> load a missile (they don't need to be in a row). <b>Push the phone forward</b> or tap MISSILE to fire it; the count starts again after you fire.</div></li>
       <li><span class="dot"></span><div><b>Tilt to evade</b> when someone fires a missile at you, or lose your best part.</div></li>
       <li><span class="dot"></span><div><b>Tilt to fly</b> the rings after three wrong in a row.</div></li>
     </ul>
@@ -295,7 +306,7 @@
   <div class="nb-hint" id="nbHint">PASS LEFT OR RIGHT</div>
 
   <div class="controls" id="qControls">
-    <div class="ctl strike dis" id="qBtnStrike"><span class="c-main">MISSILE</span><span class="c-sub" id="qStrikeN">0 READY</span><span class="c-tip" id="qStrikeHint">EARN 3 CORRECT</span></div>
+    <div class="ctl strike dis" id="qBtnStrike"><span class="c-main">MISSILE</span><span class="strike-pips" id="qStrikePips"><i></i><i></i><i></i></span><span class="c-sub" id="qStrikeN">0 / 3 CORRECT</span><span class="c-tip" id="qStrikeHint">3 MORE RIGHT ANSWERS</span></div>
   </div>
 </section>
 
@@ -307,7 +318,7 @@
     <div class="install-turn-meta">
       <div class="install-hint">ROTATE PORTRAIT → LANDSCAPE</div>
       <div class="install-bar"><div class="install-bar-fill" id="installTurnFill"></div></div>
-      <div class="install-need mono" id="installTurnNeed">TURN 70° TO FIT</div>
+      <div class="install-need mono" id="installTurnNeed">TURN 50° TO FIT</div>
     </div>
   </div>
   <button class="btn ghost sm" onclick="installPartTap()">TAP TO INSTALL INSTEAD</button>
@@ -325,53 +336,50 @@
 
 <!-- ========================= DOGFIGHT =========================== -->
 <section class="screen fight" id="s-fight">
-  <div class="f-top">
-    <div class="f-stat"><div class="v" id="fKills">0</div><div class="k">KILLS</div></div>
-    <div class="f-spacer"></div>
-    <div class="f-stat" style="align-items:flex-end"><div class="v" id="fClock">1:15</div><div class="k">LEFT</div></div>
+  <!-- one HUD strip: kills, hull, clock — everything you glance at -->
+  <div class="ck-hud">
+    <div class="ck-stat"><span class="ck-v" id="fKills">0</span><span class="ck-k">KILLS</span></div>
+    <div class="ck-hull">
+      <div class="ck-hull-k">HULL <span class="mono" id="fHpText">100</span></div>
+      <div class="hp-bar"><div class="hp-fill" id="fHpFill"></div></div>
+    </div>
+    <div class="ck-stat right"><span class="ck-v" id="fClock">1:15</span><span class="ck-k">LEFT</span></div>
   </div>
 
-  <div class="hp-bar"><div class="hp-fill" id="fHpFill"></div>
-    <span class="hp-text" id="fHpText">100</span></div>
-
   <div class="f-body">
-    <!-- artificial horizon: shows bank and throttle so the controls are legible -->
+    <!-- the view out of the canopy: a drawn pixel sky that banks with you,
+         clouds that slide as you turn, ground that rushes with throttle -->
     <div class="horizon" id="fHorizon">
-      <div class="hz-sky" id="hzSky"></div>
-      <div class="hz-radar"><canvas id="fMinimap" class="minimap"></canvas></div>
+      <canvas class="hz-canvas" id="hzCanvas" aria-hidden="true"></canvas>
+      <div class="hz-frame" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      <div class="hz-pip" aria-hidden="true"></div>
       <div class="hz-warning" id="hzWarning"></div>
       <div class="hz-fx" id="hzFx" aria-hidden="true"></div>
+      <div class="hz-contacts" id="hzContacts" aria-hidden="true"></div>
       <div class="hz-jet">
         <div class="hz-jet-glow" id="hzJetGlow"></div>
-        <div class="hz-fighter">
-          <div class="hz-tail-fin"></div>
-          <div class="hz-body"></div>
-          <div class="hz-canopy"></div>
-          <div class="hz-wing hz-wing-l"></div>
-          <div class="hz-wing hz-wing-r"></div>
-          <div class="hz-tail hz-tail-l"></div>
-          <div class="hz-tail hz-tail-r"></div>
-        </div>
+        <canvas class="hz-pixjet" id="hzPixJet"></canvas>
       </div>
-      <div class="hz-label hz-l">◀ BANK</div>
-      <div class="hz-label hz-r">BANK ▶</div>
-      <div class="hz-contacts" id="hzContacts" aria-hidden="true"></div>
-    </div>
-
-    <div class="throttle">
-      <div class="th-fill" id="fThrottle"></div>
-      <span class="th-k">THROTTLE</span>
-      <span class="th-v mono" id="fThrottleV">50%</span>
-    </div>
-
-    <div class="f-bottom solo">
       <div class="f-status" id="fStatus"></div>
+    </div>
+
+    <!-- instrument panel: a big radar and a vertical throttle -->
+    <div class="ck-panel">
+      <div class="ck-radar">
+        <div class="ck-label"><span>RADAR</span><span class="ck-legend"><i class="me"></i>YOU <i class="foe"></i>ENEMY</span></div>
+        <canvas id="fMinimap" class="minimap"></canvas>
+      </div>
+      <div class="ck-thr" aria-label="Throttle">
+        <div class="ck-label"><span>THR</span></div>
+        <div class="th-vert"><div class="th-fill" id="fThrottle"></div></div>
+        <span class="th-v mono" id="fThrottleV">50%</span>
+      </div>
     </div>
   </div>
 
   <div class="f-controls">
     <div class="f-btn guns" id="fGuns">
-      <span class="fb-main">GUNS</span><span class="fb-sub">HOLD</span>
+      <span class="fb-main">FIRE</span><span class="fb-sub">HOLD FOR GUNS</span>
     </div>
   </div>
 
@@ -383,12 +391,19 @@
 
 <!-- ======================== MINIGAME =========================== -->
 <section class="screen mini" id="s-minigame">
-  <div class="mg-head">
-    <div class="mg-title" id="mgTitle">INCOMING</div>
-    <div class="mg-sub" id="mgSub">TILT TO EVADE</div>
+  <div class="mg-top">
+    <div class="mg-level" id="mgLevel" style="display:none"></div>
+    <div class="mg-head">
+      <div class="mg-title" id="mgTitle">INCOMING</div>
+      <div class="mg-sub" id="mgSub">TILT TO EVADE</div>
+    </div>
+    <div class="mg-score"><span class="mono" id="mgScore">0</span><span class="mgs-k">SCORE</span></div>
   </div>
+  <div class="hotbar" id="hotbarMini"></div>
   <canvas id="mgCanvas" class="mg-canvas"></canvas>
   <div class="mg-result" id="mgResult"></div>
+  <button type="button" class="mg-flip" id="mgFlip"></button>
+  <div class="mg-slots" id="mgSlots"></div>
 </section>
 
 <!-- ======================= INTERMISSION ========================= -->
@@ -429,6 +444,7 @@
   <div class="eyebrow" id="resEyebrow">RESULT</div>
   <h2 id="resTitle" style="font-size:40px;margin-top:10px">—</h2>
   <p id="resReason">—</p>
+  <div class="mini-podium" id="resPodium"></div>
   <p style="margin-top:28px;font-size:12.5px;color:var(--text-mute)">Check the big screen for the full reveal.</p>
 </section>
 

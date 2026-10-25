@@ -1,7 +1,0 @@
-Host lobby UI refresh
-- The QR, Gemini question bank, leaderboard, and match settings use the same spacious card style.
-- Restored comfortable padding, button sizing, and input spacing instead of tiny compact controls.
-- Added subtle animated pixel-cloud artwork near QR joining and Gemini panel.
-- Responsive layout: three columns on wide screens, two columns on medium screens, one column on small screens.
-- Kept the side Match Settings layout and Gemini generation progress updates.
-- No gameplay mechanics changed.

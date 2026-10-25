@@ -5,6 +5,7 @@ A retro pixel arcade party game for phones in one room.
 
   home     -> HOST GAME or JOIN GAME with a 4-letter room code
   quiz     -> answer trivia, earn fighter jet parts, pass what you don't know
+  arcade   -> or skip the questions: climb a ladder of 5-second mini-games
   vote     -> the table marks one pilot as THE THREAT
   dogfight -> everyone flies the jet they built
 
@@ -34,6 +35,7 @@ from fastapi.staticfiles import StaticFiles
 import quiz as quizmod
 import parts as partsmod
 import dogfight as dogfightmod
+import arcade as arcademod
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
@@ -57,14 +59,20 @@ FIGHT_SECONDS = 75
 FIGHT_HZ = 30
 PHONE_EVERY = 3
 
-MIN_PLAYERS = 3
+MIN_PLAYERS = 3          # seats at the table, humans and bots together
 SOLO_FILL_TO = 4
-BOT_NAMES = ["RIVAL", "GHOST", "NOMAD", "CIPHER", "ECHO", "VAGRANT"]
+MAX_SEATS = 12           # humans + bots; the circle and arena stay readable
+MAX_BOTS = 11
+BOT_NAMES = ["RIVAL", "GHOST", "NOMAD", "CIPHER", "ECHO", "VAGRANT",
+             "COMET", "RAVEN", "TALON", "DRIFT", "SPARK"]
 
 AVATAR_IDS = ["fox", "bibble", "frog", "bear", "panda",
               "owl", "penguin", "bunny", "axolotl", "shiba"]
 
 ROOM_IDLE_SECONDS = 60 * 60      # reap rooms nobody has touched in an hour
+
+ARCADE_CLEAR_POINTS = 40         # per level cleared, multiplied by the level
+INSTALL_BEAT_SECONDS = 2.0       # after fitting a part: time to bring the phone upright
 
 # ---------------------------------------------------------------------------
 # CARDS
@@ -113,7 +121,7 @@ FEATHERWEIGHT_BONUS = 200
 FEATHERWEIGHT_MAX_SLOTS = 3
 THREAT_BOUNTY = 3
 
-STREAK_FOR_STRIKE = 3    # every 3 correct answers this round earns a missile
+MISSILE_EVERY = 3        # any 3 correct answers (not a streak) earn a missile
 STREAK_FOR_RINGS = 3     # wrong answers in a row sends you through the rings
 RING_COOLDOWN = 40.0     # ...but no more than one ring run per this often
 
@@ -263,13 +271,21 @@ class Player:
     score: int = 0
     streak_ok: int = 0          # correct answers in a row
     streak_bad: int = 0         # wrong answers in a row
-    strikes: int = 0            # missile strikes earned, unspent
-    round_correct: int = 0       # every 3 correct answers, regardless of streak
-    minigame: str = ""          # "dodge" | "rings" while one is running
+    strikes: int = 0            # missile ready to fire: 0 or 1
+    round_correct: int = 0       # correct answers this round (stats only)
+    missile_progress: int = 0   # correct answers toward the next missile
+    minigame: str = ""          # "dodge" | "rings" | "lockon" while one runs
     last_rings: float = 0.0     # so the ring run cannot spam a cold player
     passes_made: int = 0
     public_passes: int = 0
     passes_taken: int = 0
+
+    # ARCADE: the ladder is per pilot, so one hot streak never makes the
+    # whole room harder and nobody is parked on a rung they cannot clear.
+    arcade_level: int = 1
+    arcade_cleared: int = 0
+    arcade_token: int = 0
+    arcade_next_at: float = 0.0
 
     heading: float = 0.0
     seat: int = 0
@@ -290,6 +306,8 @@ class Player:
             "alive": self.alive, "seat": self.seat,
             "connected": self.connected, "answered": self.answered,
             "bot": self.is_bot, "passesMade": self.passes_made,
+            "arcadeLevel": self.arcade_level,
+            "arcadeCleared": self.arcade_cleared,
             "loadout": (self.loadout or partsmod.Loadout()).public(),
         }
 
@@ -326,6 +344,7 @@ class Room:
     generation_count: int = 0
     generation_stage: str = ""
     generation_target: int = 100
+    lobby_bots: int = 0          # stand-in pilots the host has seated
 
     def s(self, key: str) -> int:
         return self.settings.get(key, _defaults()[key])
@@ -338,6 +357,9 @@ class Room:
 
     def alive_players(self) -> List[Player]:
         return [p for p in self.players.values() if p.joined and p.alive and not p.lobby_only]
+
+    def is_arcade(self) -> bool:
+        return self.question_mode == "arcade"
 
 
 ROOMS: Dict[str, Room] = {}
@@ -393,6 +415,35 @@ async def broadcast_hosts(r: Room, payload: dict):
                          return_exceptions=True)
 
 
+def bank_public(r: Room) -> dict:
+    """What the host's question-bank panel shows for whichever mode is set."""
+    if r.is_arcade():
+        return {"mode": "arcade", "level": r.question_level,
+                "title": "Arcade ladder",
+                "count": len(arcademod.GAMES), "busy": False,
+                "error": r.generation_error, "generated": 0,
+                "target": 0, "stage": ""}
+    return {"mode": r.question_mode, "level": r.question_level,
+            "title": (r.question_deck or {}).get("title", "Built-in trivia"),
+            "count": len((r.question_deck or quizmod.load_deck())["questions"]),
+            "busy": r.generation_busy, "error": r.generation_error,
+            "generated": r.generation_count, "target": r.generation_target,
+            "stage": r.generation_stage}
+
+
+def arcade_board(r: Room) -> List[dict]:
+    """Pilots ranked by how far up the ladder they have climbed."""
+    if not r.is_arcade():
+        return []
+    rows = []
+    for p in r.players.values():
+        if p.joined and not p.lobby_only:
+            rows.append(arcademod.board_row(p, p.arcade_level))
+    rows.sort(key=lambda row: (-row["level"], -row["cleared"],
+                               row["name"].casefold()))
+    return rows
+
+
 async def push_state(r: Room):
     await broadcast(r, {
         "t": "state",
@@ -409,11 +460,12 @@ async def push_state(r: Room):
         "reveal": r.reveal,
         "fightStandings": r.fight_standings,
         "leaderboard": r.lobby_leaderboard if r.phase == "lobby" else [],
-        "questionBank": {"mode": r.question_mode, "level": r.question_level,
-                         "title": (r.question_deck or {}).get("title", "Built-in trivia"),
-                         "count": len((r.question_deck or quizmod.load_deck())["questions"]),
-                         "busy": r.generation_busy, "error": r.generation_error,
-                         "generated": r.generation_count, "target": r.generation_target, "stage": r.generation_stage},
+        "arcade": r.is_arcade(),
+        "arcadeBoard": arcade_board(r),
+        "lobbyBots": r.lobby_bots,
+        "maxBots": MAX_BOTS,
+        "maxSeats": MAX_SEATS,
+        "questionBank": bank_public(r),
     })
 
 
@@ -426,19 +478,50 @@ def clear_bots(r: Room):
         r.players.pop(pid, None)
 
 
-def add_bots(r: Room, target: int):
-    existing = len([p for p in r.players.values() if p.joined])
+def add_bot(r: Room) -> bool:
+    """Seat one stand-in pilot. False if the bench is empty."""
     pool = [n for n in BOT_NAMES
             if not any(p.name == n for p in r.players.values())]
-    for _ in range(max(0, target - existing)):
-        if not pool:
+    if not pool:
+        return False
+    name = pool[0]
+    taken = {p.avatar for p in r.players.values() if p.joined}
+    free = [a for a in AVATAR_IDS if a not in taken] or AVATAR_IDS
+    r.players[f"bot_{name.lower()}"] = Player(
+        pid=f"bot_{name.lower()}", name=name, joined=True, answered=True,
+        connected=True, is_bot=True, avatar=random.choice(free),
+        loadout=partsmod.Loadout())
+    return True
+
+
+def add_bots(r: Room, target: int):
+    """Fill the table with bots until it has `target` seats."""
+    while len([p for p in r.players.values() if p.joined]) < target:
+        if not add_bot(r):
             break
-        name = pool.pop(0)
-        taken = {p.avatar for p in r.players.values() if p.joined}
-        free = [a for a in AVATAR_IDS if a not in taken] or AVATAR_IDS
-        r.players[f"bot_{name.lower()}"] = Player(
-            pid=f"bot_{name.lower()}", name=name, joined=True, answered=True,
-            connected=True, is_bot=True, avatar=random.choice(free))
+
+
+def humans_seated(r: Room) -> int:
+    return len([p for p in r.players.values() if p.joined and not p.is_bot])
+
+
+def set_lobby_bots(r: Room, n: int):
+    """
+    Seat exactly n bots, chosen by the host in the lobby.
+
+    Bots stay seated across matches until the host changes the number, so a
+    group of three can play a five-pilot table every round without re-adding
+    them. The seat cap counts humans, so bots never crowd a real player out.
+    """
+    room_for = max(0, MAX_SEATS - humans_seated(r))
+    n = max(0, min(MAX_BOTS, room_for, int(n)))
+    bots = [p for p in r.players.values() if p.is_bot]
+    for b in bots[n:]:
+        r.players.pop(b.pid, None)
+    while len([p for p in r.players.values() if p.is_bot]) < n:
+        if not add_bot(r):
+            break
+    r.lobby_bots = len([p for p in r.players.values() if p.is_bot])
 
 
 def capture_leaderboard(r: Room) -> List[dict]:
@@ -455,6 +538,34 @@ def capture_leaderboard(r: Room) -> List[dict]:
     return ranked
 
 
+def reset_player(p: Player):
+    """Everything a pilot carries that must not survive into the next match."""
+    p.lobby_only = False
+    p.minigame = ""
+    p.streak_ok = p.streak_bad = p.strikes = 0
+    p.agenda = ""
+    p.rival = ""
+    p.answered = False
+    p.alive = True
+    p.correct = p.score = 0
+    p.round_correct = 0
+    p.missile_progress = 0
+    p.arcade_level = 1
+    p.arcade_cleared = 0
+    p.arcade_next_at = 0.0
+    p.arcade_token += 1
+    p.passes_made = p.public_passes = p.passes_taken = 0
+    p.stolen = []
+    p.traded_with = ""
+    p.inspected = ""
+    p.gave_to = {}
+    p.active_power = None
+    p.loadout = None
+    p.pending_part = None
+    p.pending_token += 1
+    p.crates = []
+
+
 async def reset_to_lobby(r: Room):
     r.lobby_leaderboard = capture_leaderboard(r)
     if r.task and not r.task.done():
@@ -464,7 +575,7 @@ async def reset_to_lobby(r: Room):
         r.fight.running = False
         r.fight.bullets.clear()
         r.fight.missiles.clear()
-    clear_bots(r)
+    set_lobby_bots(r, r.lobby_bots)
     r.phase = "lobby"
     r.brief_active = False
     r.brief_ready.clear()
@@ -481,25 +592,7 @@ async def reset_to_lobby(r: Room):
     r.next_hot = 1
 
     for p in r.players.values():
-        p.lobby_only = False
-        p.minigame = ""
-        p.streak_ok = p.streak_bad = p.strikes = 0
-        p.agenda = ""
-        p.rival = ""
-        p.answered = False
-        p.alive = True
-        p.correct = p.score = 0
-        p.round_correct = 0
-        p.passes_made = p.public_passes = p.passes_taken = 0
-        p.stolen = []
-        p.traded_with = ""
-        p.inspected = ""
-        p.gave_to = {}
-        p.active_power = None
-        p.loadout = None
-        p.pending_part = None
-        p.pending_token += 1
-        p.crates = []
+        reset_player(p)
 
     for pid in [p.pid for p in r.players.values()
                 if not p.connected and not p.is_bot]:
@@ -514,32 +607,23 @@ async def start_game(r: Room, fill: bool = False,
     if r.phase not in ("lobby", "results"):
         return
     r.settings = resolve_settings(settings)
-    clear_bots(r)
+    # The host's seated bots play every match. SOLO TEST tops the table up
+    # to four on top of that, so one phone can always try the whole loop.
+    set_lobby_bots(r, r.lobby_bots)
     if fill:
         add_bots(r, SOLO_FILL_TO)
 
     joined = [p for p in r.players.values() if p.joined]
-    if len(joined) < (1 if fill else MIN_PLAYERS):
+    if humans_seated(r) < 1 or len(joined) < (1 if fill else MIN_PLAYERS):
         return
 
     ag = agendas_for(len(joined))
     random.shuffle(ag)
     for i, (p, a) in enumerate(zip(joined, ag)):
-        p.lobby_only = False
-        p.minigame = ""
+        reset_player(p)
         p.agenda = a
-        p.rival = ""
         p.answered = p.is_bot
-        p.alive = True
-        p.correct = p.score = 0
-        p.round_correct = 0
-        p.passes_made = p.public_passes = p.passes_taken = 0
-        p.stolen = []
-        p.traded_with = ""
-        p.inspected = ""
-        p.gave_to = {}
         p.loadout = partsmod.Loadout()
-        p.crates = []
         p.seat = i
 
     duel = next((p for p in joined if p.agenda == "duelist"), None)
@@ -549,7 +633,8 @@ async def start_game(r: Room, fill: bool = False,
             duel.rival = random.choice(others).pid
 
     r.lobby_leaderboard = []
-    r.quiz = quizmod.QuizEngine(deck=r.question_deck)
+    # Arcade has no questions, so it needs no deck and shows no accuracy.
+    r.quiz = None if r.is_arcade() else quizmod.QuizEngine(deck=r.question_deck)
     r.hot = {}
     r.next_hot = 1
     r.phase = "calling"
@@ -598,15 +683,18 @@ async def deliver_agenda(r: Room, p: Player):
 # MATCH
 # ---------------------------------------------------------------------------
 
-async def phase_brief(r: Room, stage: str):
+async def phase_brief(r: Room, stage: str, lines: Optional[List[str]] = None):
     """Phase-specific instructions: 10 seconds max or every active human ready."""
     r.brief_id += 1
     sequence = r.brief_id
     r.brief_active = True
     r.brief_ready.clear()
     deadline = time.monotonic() + 10
-    await broadcast(r, {"t": "phase_brief", "stage": stage,
-                        "briefId": sequence, "seconds": 10})
+    payload = {"t": "phase_brief", "stage": stage,
+               "briefId": sequence, "seconds": 10}
+    if lines:
+        payload["lines"] = lines
+    await broadcast(r, payload)
     try:
         while time.monotonic() < deadline:
             active = {p.pid for p in r.humans() if p.ws and p.connected}
@@ -633,70 +721,26 @@ async def run_match(r: Room):
         await asyncio.sleep(11)
 
         for rd in range(1, r.s("rounds") + 1):
-            await phase_brief(r, "quiz")
-            r.round_no = rd
-            r.phase = "round"
-            r.phase_ends = time.time() + r.s("round_seconds")
-            for p in r.players.values():
-                p.alive = True
-                p.rerolls_left = 2
-                p.round_correct = 0
-                p.strikes = 0
-                await send(p.ws, {"t": "strike_ready", "n": 0})
-            await push_state(r)
-            await broadcast(r, {"t": "round_start", "round": rd})
-
-            for p in r.alive_players():
-                if not p.is_bot:
-                    inst = r.quiz.issue(p.pid)
-                    await send(p.ws, {"t": "question", **inst.public()})
-
-            t_end = r.phase_ends
-            t_start = time.time()
-            n_cards = 0  # Power cards and handicaps disabled
-            gap = (r.s("round_seconds") / n_cards) if n_cards else 0
-            schedule = [t_start + gap * (i + 0.5) for i in range(n_cards)]
-            drawn = 0
-            next_bot = time.time() + random.uniform(4, 7)
-
-            if schedule:
-                await broadcast(r, {"t": "power_timer",
-                                    "next": round(schedule[0] - t_start, 1),
-                                    "gap": round(gap, 1)})
-
-            while time.time() < t_end:
-                now = time.time()
-                if drawn < len(schedule) and now >= schedule[drawn]:
-                    await deal_cards(r)
-                    drawn += 1
-                    nxt = (schedule[drawn] - now) if drawn < len(schedule) else (t_end - now)
-                    await broadcast(r, {"t": "power_timer",
-                                        "next": round(max(0, nxt), 1),
-                                        "gap": round(gap, 1),
-                                        "remaining": len(schedule) - drawn})
-                await tick_hot(r)
-                for pid, _ in r.quiz.expired(now):
-                    p = r.players.get(pid)
-                    if p:
-                        await resolve_answer(r, p, -1)
-                if now >= next_bot:
-                    await bot_turn(r)
-                    next_bot = now + random.uniform(4, 8)
-                await asyncio.sleep(0.25)
-
-            await broadcast(r, {"t": "round_end", "round": rd})
+            if r.is_arcade():
+                await phase_brief(r, "arcade", arcademod.brief_lines(1))
+                await run_arcade_round(r, rd)
+            else:
+                await phase_brief(r, "quiz")
+                await run_quiz_round(r, rd)
 
             r.phase = "intermission"
             r.phase_ends = time.time() + INTERMISSION_SECONDS
             standings = sorted(
                 ({"name": p.name, "avatar": p.avatar, "bot": p.is_bot,
-                  "correct": p.correct,
+                  "correct": p.correct, "level": p.arcade_level,
+                  "cleared": p.arcade_cleared,
                   "rating": (p.loadout or partsmod.Loadout()).rating()}
                  for p in r.players.values() if p.joined),
                 key=lambda x: -x["rating"])
             await push_state(r)
             await broadcast(r, {"t": "intermission", "round": rd,
                                 "last": rd >= r.s("rounds"),
+                                "arcade": r.is_arcade(),
                                 "standings": standings})
             await asyncio.sleep(INTERMISSION_SECONDS)
 
@@ -735,6 +779,227 @@ async def run_match(r: Room):
         import traceback
         print("!! match loop crashed:")
         traceback.print_exc()
+
+
+async def run_quiz_round(r: Room, rd: int):
+    """The original round: questions land, get answered, or get passed on."""
+    r.round_no = rd
+    r.phase = "round"
+    r.phase_ends = time.time() + r.s("round_seconds")
+    for p in r.players.values():
+        p.alive = True
+        p.rerolls_left = 2
+        p.round_correct = 0
+        # A missile (and progress toward one) carries into the next round —
+        # three right answers are three right answers, whichever round.
+        await send_missile(p)
+    await push_state(r)
+    await broadcast(r, {"t": "round_start", "round": rd, "arcade": False})
+
+    for p in r.alive_players():
+        if not p.is_bot:
+            inst = r.quiz.issue(p.pid)
+            await send(p.ws, {"t": "question", **inst.public()})
+
+    t_end = r.phase_ends
+    t_start = time.time()
+    n_cards = 0  # Power cards and handicaps disabled
+    gap = (r.s("round_seconds") / n_cards) if n_cards else 0
+    schedule = [t_start + gap * (i + 0.5) for i in range(n_cards)]
+    drawn = 0
+    next_bot = time.time() + random.uniform(4, 7)
+
+    if schedule:
+        await broadcast(r, {"t": "power_timer",
+                            "next": round(schedule[0] - t_start, 1),
+                            "gap": round(gap, 1)})
+
+    while time.time() < t_end:
+        now = time.time()
+        if drawn < len(schedule) and now >= schedule[drawn]:
+            await deal_cards(r)
+            drawn += 1
+            nxt = (schedule[drawn] - now) if drawn < len(schedule) else (t_end - now)
+            await broadcast(r, {"t": "power_timer",
+                                "next": round(max(0, nxt), 1),
+                                "gap": round(gap, 1),
+                                "remaining": len(schedule) - drawn})
+        await tick_hot(r)
+        for pid, _ in r.quiz.expired(now):
+            p = r.players.get(pid)
+            if p:
+                await resolve_answer(r, p, -1)
+        if now >= next_bot:
+            await bot_turn(r)
+            next_bot = now + random.uniform(4, 8)
+        await asyncio.sleep(0.25)
+
+    await broadcast(r, {"t": "round_end", "round": rd})
+
+
+# ---------------------------------------------------------------------------
+# ARCADE ROUND
+#
+# No questions at all. Each pilot runs their own ladder of 5-second games,
+# and every clear rolls a part. Because the ladder is per pilot, the round
+# has no shared clock beyond its own length — people simply climb until it
+# runs out.
+# ---------------------------------------------------------------------------
+
+async def run_arcade_round(r: Room, rd: int):
+    r.round_no = rd
+    r.phase = "round"
+    r.phase_ends = time.time() + r.s("round_seconds")
+    for p in r.players.values():
+        p.alive = True
+        p.strikes = 0
+        p.round_correct = 0
+        p.minigame = ""
+        p.arcade_next_at = 0.0
+    await push_state(r)
+    await broadcast(r, {"t": "round_start", "round": rd, "arcade": True})
+
+    for p in r.alive_players():
+        if not p.is_bot:
+            await deal_arcade_game(r, p)
+
+    t_end = r.phase_ends
+    next_bot = time.time() + random.uniform(2.0, 4.0)
+    last_push = 0.0
+
+    while time.time() < t_end:
+        now = time.time()
+        await tick_hot(r)
+
+        # A pilot whose game resolved gets the next rung after a short beat,
+        # which is just long enough to read what the last one paid out.
+        for p in r.alive_players():
+            if p.is_bot or p.minigame or p.lobby_only or not p.ws:
+                continue
+            if p.arcade_next_at and now >= p.arcade_next_at:
+                await deal_arcade_game(r, p)
+
+        if now >= next_bot:
+            await bot_arcade(r)
+            next_bot = now + random.uniform(2.5, 5.0)
+
+        # The host board is the only shared view, so keep it moving without
+        # pushing full state on every tick.
+        if now - last_push > 1.5:
+            last_push = now
+            await broadcast_hosts(r, {"t": "arcade_board",
+                                      "rows": arcade_board(r)})
+
+        await asyncio.sleep(0.2)
+
+    for p in r.players.values():
+        p.minigame = ""
+        p.arcade_next_at = 0.0
+        if p.pending_part:
+            # Won it, the clock just beat the rotation: fit it rather than
+            # lose a cleared level to the buzzer.
+            await install_pending_part(r, p, p.pending_token)
+    await broadcast(r, {"t": "round_end", "round": rd})
+
+
+async def deal_arcade_game(r: Room, p: Player):
+    """Hand this pilot the next rung of their own ladder."""
+    if r.phase != "round" or not p.alive or p.lobby_only:
+        return
+    p.arcade_next_at = 0.0
+    p.arcade_token += 1
+    spec = arcademod.spec_for(p.arcade_level)
+    p.minigame = spec["kind"]
+    await send(p.ws, {"t": "minigame", "arcade": True,
+                      "token": p.arcade_token, **spec})
+    await broadcast_hosts(r, {"t": "arcade_fx", "kind": "start",
+                              "pid": p.pid, "name": p.name,
+                              "level": p.arcade_level,
+                              "game": spec["title"]})
+
+
+async def end_arcade_game(r: Room, p: Player, success: bool,
+                          token: Optional[int] = None):
+    """
+    Score one rung: pay the part, move the pilot up or down, queue the next.
+
+    An upgrade is held until the pilot rotates the phone to fit it, exactly as
+    in the quiz. Their next level waits for that, so nobody is thrown into a
+    tilt game with the phone still turned sideways.
+    """
+    if token is not None and token != p.arcade_token:
+        return                      # a stale result from a game already closed
+    if not p.minigame:
+        return
+
+    kind = p.minigame
+    level = p.arcade_level
+    p.minigame = ""
+    p.arcade_token += 1
+
+    pending = None
+    if success:
+        p.arcade_cleared += 1
+        p.score += ARCADE_CLEAR_POINTS * level
+        p.loadout = p.loadout or partsmod.Loadout()
+        rolled = partsmod.roll_part(arcademod.heat_for(level))
+        if partsmod.better(rolled, p.loadout.parts[rolled["slot"]]):
+            # Held for the rotate-to-install gesture, same as the quiz.
+            p.pending_token += 1
+            p.pending_part = rolled
+            pending = partsmod.public_part(rolled, rolled["slot"])
+        else:
+            # Not an upgrade. It arrives as a crate on a fuse: claim it,
+            # or shove it at a neighbour and bump its tier on the way.
+            await spawn_hot(r, p, rolled, harmless=True)
+
+    p.arcade_level = arcademod.next_level(level, success)
+
+    await send(p.ws, {
+        "t": "minigame_over", "kind": kind, "arcade": True,
+        "success": success, "level": level, "nextLevel": p.arcade_level,
+        "points": ARCADE_CLEAR_POINTS * level if success else 0,
+        "score": p.score,
+        "pending": pending,
+        "loadout": (p.loadout or partsmod.Loadout()).public(),
+        "nextIn": arcademod.BEAT_SECONDS,
+    })
+    if pending:
+        await send(p.ws, {"t": "part_pending", "token": p.pending_token,
+                          "part": pending})
+
+    await broadcast_hosts(r, {"t": "arcade_fx",
+                              "kind": "clear" if success else "miss",
+                              "pid": p.pid, "name": p.name, "level": level,
+                              "nextLevel": p.arcade_level})
+    await broadcast_hosts(r, {"t": "arcade_board", "rows": arcade_board(r)})
+
+    # With a part to fit, the next level waits for the install (the round
+    # loop only deals when arcade_next_at is set). Otherwise, a short beat.
+    p.arcade_next_at = 0.0 if pending else time.time() + arcademod.BEAT_SECONDS
+
+
+async def bot_arcade(r: Room):
+    """A stand-in pilot clears or fluffs a rung, so the board has movement."""
+    bots = [p for p in r.players.values() if p.is_bot and p.alive and p.joined]
+    if not bots:
+        return
+    # roughly a third of the bots play a level each tick, so a big bot table
+    # climbs at about the pace of a human rather than crawling
+    random.shuffle(bots)
+    for b in bots[:max(1, len(bots) // 3)]:
+        level = b.arcade_level
+        ok = arcademod.bot_result(level)
+        if ok:
+            b.arcade_cleared += 1
+            b.score += ARCADE_CLEAR_POINTS * level
+            b.loadout = b.loadout or partsmod.Loadout()
+            b.loadout.award(partsmod.roll_part(arcademod.heat_for(level)))
+        b.arcade_level = arcademod.next_level(level, ok)
+        await broadcast_hosts(r, {"t": "arcade_fx",
+                                  "kind": "clear" if ok else "miss",
+                                  "pid": b.pid, "name": b.name,
+                                  "level": level})
 
 
 async def deal_cards(r: Room):
@@ -891,15 +1156,20 @@ async def resolve_answer(r: Room, p: Player, choice: int,
                 p.last_rings = time.time()
                 await start_minigame(r, p, "rings")
                 return
-        if res["correct"] and p.round_correct % STREAK_FOR_STRIKE == 0:
-            p.strikes += 1
-            await send(p.ws, {"t": "strike_ready", "n": p.strikes})
+        if res["correct"] and p.strikes == 0:
+            # Any correct answer counts — wrong ones in between don't reset it.
+            # Progress only builds while no missile is loaded; firing starts
+            # the count again from zero.
+            p.missile_progress += 1
+            if p.missile_progress >= MISSILE_EVERY:
+                p.missile_progress = 0
+                p.strikes = 1
+            await send_missile(p, earned=p.strikes == 1 and p.missile_progress == 0)
 
     if r.phase == "round" and p.alive and not p.minigame:
         was_queued = bool(r.quiz.queued.get(p.pid))
         inst = r.quiz.issue(p.pid)
         await send(p.ws, {"t": "question", **inst.public(), "passed": was_queued})
-
 
 
 async def install_pending_part(r: Room, p: Player, token=None):
@@ -911,12 +1181,16 @@ async def install_pending_part(r: Room, p: Player, token=None):
     award = p.loadout.award(part)
     await send(p.ws, {"t": "part", **award, "loadout": p.loadout.public()})
     await send(p.ws, {"t": "part_installed", "token": p.pending_token})
+    if r.is_arcade() and r.phase == "round" and not p.minigame:
+        # fitted — give them a moment to bring the phone upright, then deal
+        p.arcade_next_at = time.time() + INSTALL_BEAT_SECONDS
     if award.get("fitted"):
         await broadcast_hosts(r, {"t": "earn_fx", "pid": p.pid, "name": p.name,
                                   "part": award["part"]["name"], "tier": award["part"]["tier"],
                                   "slot": award["part"]["slot"], "upgrade": award.get("upgrade", False)})
     else:
         await spawn_hot(r, p, partsmod.hot_from_public(award["part"]))
+
 
 async def reroll_question(r: Room, p: Player, inst_id: int):
     if r.phase != "round" or not r.quiz or p.rerolls_left <= 0 or p.minigame:
@@ -948,6 +1222,7 @@ def hot_public(c: dict, now: float) -> dict:
         "cid": c["cid"], "slot": c["slot"], "tier": c["tier"],
         "name": c["name"], "passes": c["passes"],
         "left": round(max(0.0, c["deadline"] - now), 1),
+        "harmless": c.get("harmless", False),
         "from": c.get("from_name"),
     }
 
@@ -959,8 +1234,14 @@ async def push_hot(r: Room, p: Player):
     await send(p.ws, {"t": "hot", "crates": mine})
 
 
-async def spawn_hot(r: Room, p: Player, part: dict):
-    """A part that wasn't an upgrade arrives live, with the fuse already lit."""
+async def spawn_hot(r: Room, p: Player, part: dict, harmless: bool = False):
+    """
+    A part that wasn't an upgrade arrives live, with the fuse already lit.
+
+    In arcade the fuse is harmless: running it out scraps the crate instead of
+    tearing a fitted part off the jet. Losing a part you earned in a dexterity
+    game to a timer you were never warned about reads as the game cheating.
+    """
     now = time.time()
 
     # Cap the clutter. Over the cap, the oldest crate in the room is defused
@@ -981,6 +1262,7 @@ async def spawn_hot(r: Room, p: Player, part: dict):
         "cid": cid, "slot": part["slot"], "tier": part["tier"],
         "name": part["name"], "holder": p.pid, "passes": 0,
         "born": now, "deadline": now + HOT_FUSE_SECONDS, "from_name": None,
+        "harmless": harmless,
     }
     await push_hot(r, p)
 
@@ -1014,6 +1296,10 @@ async def pass_hot(r: Room, p: Player, cid: int, target_pid: str,
         return
     target = neighbour(r, p, direction) if direction else r.players.get(target_pid)
     if not target or target.pid == p.pid or not target.joined or not target.alive:
+        # Say so, rather than leaving the phone guessing whether it worked.
+        await send(p.ws, {"t": "toast", "kind": "warn",
+                          "text": "NOBODY THAT WAY TO PASS TO"})
+        await push_hot(r, p)
         return
 
     rank = partsmod.TIER_RANK[c["tier"]]
@@ -1031,12 +1317,43 @@ async def pass_hot(r: Room, p: Player, cid: int, target_pid: str,
 
     await push_hot(r, p)
     await push_hot(r, target)
+    # Confirmed by the server, so the sender knows exactly who has it now.
+    await send(p.ws, {"t": "toast", "kind": "good",
+                      "text": f"PASSED {c['name']} TO {target.name}"})
     await send(target.ws, {"t": "toast", "kind": "bad",
-                           "text": "LIVE CRATE FROM " + p.name})
+                           "text": f"{p.name} PASSED YOU {c['name']}"})
+    if target.is_bot:
+        # Bots have no phone to tap CLAIM on, so a part passed to one used
+        # to sit there until the fuse ran out. Now they decide.
+        asyncio.create_task(bot_take_crate(r, c["cid"], target.pid))
     await broadcast_hosts(r, {"t": "pass_fx", "fromPid": p.pid,
                               "toPid": target.pid, "from": p.name,
                               "to": target.name, "kind": "crate",
                               "tier": c["tier"], "passes": c["passes"]})
+
+
+async def bot_take_crate(r: Room, cid: int, bot_pid: str):
+    """
+    A stand-in pilot handed a crate: keep it if it beats what they have,
+    otherwise pass it on, the way a person would.
+    """
+    await asyncio.sleep(random.uniform(1.4, 2.6))
+    c = r.hot.get(cid)
+    bot = r.players.get(bot_pid)
+    if not c or not bot or c["holder"] != bot_pid or r.phase != "round":
+        return
+    bot.loadout = bot.loadout or partsmod.Loadout()
+    part = hot_part(c)
+    if partsmod.better(part, bot.loadout.parts[c["slot"]]) or c["passes"] >= 4:
+        r.hot.pop(cid, None)
+        award = bot.loadout.award(part)
+        if award.get("fitted"):
+            await broadcast_hosts(r, {
+                "t": "earn_fx", "pid": bot.pid, "name": bot.name,
+                "part": award["part"]["name"], "tier": award["part"]["tier"],
+                "slot": award["part"]["slot"], "upgrade": award.get("upgrade", False)})
+        return
+    await pass_hot(r, bot, cid, "", random.choice(["left", "right"]))
 
 
 async def tick_hot(r: Room):
@@ -1047,9 +1364,13 @@ async def tick_hot(r: Room):
         holder = r.players.get(c["holder"])
         if not holder:
             continue
-        lost = holder.loadout.strip_random() if holder.loadout else None
+        # A harmless crate just gets scrapped; it never costs a fitted part.
+        lost = None
+        if not c.get("harmless") and holder.loadout:
+            lost = holder.loadout.strip_random()
         await send(holder.ws, {
             "t": "hot_blew", "crate": hot_public(c, now),
+            "harmless": c.get("harmless", False),
             "lost": partsmod.public_part(lost, lost["slot"]) if lost else None,
             "loadout": (holder.loadout or partsmod.Loadout()).public(),
         })
@@ -1070,7 +1391,14 @@ async def start_minigame(r: Room, p: Player, kind: str, extra: Optional[dict] = 
     if r.quiz:
         r.quiz.take(p.pid)
     p.minigame = kind
-    await send(p.ws, {"t": "minigame", "kind": kind, **(extra or {})})
+    # The quiz interruptions run at a fixed, forgiving rung of the same
+    # ladder the arcade uses, so one set of mini-game code serves both.
+    spec = arcademod.spec_for(3 if kind == "rings" else 2)
+    spec["kind"] = kind
+    spec.pop("title", None)
+    spec.pop("hint", None)
+    await send(p.ws, {"t": "minigame", "kind": kind, "arcade": False,
+                      "spec": spec, **(extra or {})})
 
 
 async def end_minigame(r: Room, p: Player, success: bool, kind: str):
@@ -1081,7 +1409,7 @@ async def end_minigame(r: Room, p: Player, success: bool, kind: str):
         lost = p.loadout.strip_best() if kind == "dodge" else p.loadout.strip_random()
 
     await send(p.ws, {
-        "t": "minigame_over", "kind": kind, "success": success,
+        "t": "minigame_over", "kind": kind, "arcade": False, "success": success,
         "lost": partsmod.public_part(lost, lost["slot"]) if lost else None,
         "loadout": (p.loadout or partsmod.Loadout()).public(),
     })
@@ -1093,6 +1421,13 @@ async def end_minigame(r: Room, p: Player, success: bool, kind: str):
     if r.phase == "round" and p.alive and r.quiz:
         inst = r.quiz.issue(p.pid)
         await send(p.ws, {"t": "question", **inst.public()})
+
+
+async def send_missile(p: Player, earned: bool = False):
+    """Tell a phone whether a missile is loaded and how close the next one is."""
+    await send(p.ws, {"t": "strike_ready", "n": p.strikes,
+                      "progress": p.missile_progress, "need": MISSILE_EVERY,
+                      "earned": earned})
 
 
 async def handle_strike(r: Room, p: Player, msg: dict):
@@ -1107,8 +1442,9 @@ async def handle_strike(r: Room, p: Player, msg: dict):
                           "text": "NO AVAILABLE TARGET"})
         return
     target = random.choice(targets)
-    p.strikes -= 1
-    await send(p.ws, {"t": "strike_ready", "n": p.strikes})
+    p.strikes = 0
+    p.missile_progress = 0          # fired: the next one takes 3 fresh answers
+    await send_missile(p)
     await send(p.ws, {"t": "toast", "kind": "good",
                       "text": "MISSILE AWAY → " + target.name})
     await broadcast_hosts(r, {"t": "strike_fx", "from": p.name, "to": target.name})
@@ -1150,6 +1486,7 @@ def seating(r: Room) -> List[dict]:
             "rating": (p.loadout or partsmod.Loadout()).rating(),
             "filled": (p.loadout or partsmod.Loadout()).filled(),
             "correct": p.correct,
+            "level": p.arcade_level,
             "parts": (p.loadout or partsmod.Loadout()).public()["parts"],
         })
     return out
@@ -1519,9 +1856,16 @@ def score_agendas(r: Room, fight, standings: List[dict]) -> List[dict]:
         row["agendaColor"] = a.get("color", "")
         row["agendaNote"] = note
         row["bonus"] = bonus
-        row["final"] = row["score"] + bonus
+        # Final = what you earned building the jet (arcade levels or quiz
+        # answers) + what you did with it in the dogfight + your agenda.
+        row["fightScore"] = row["score"]
+        row["matchPoints"] = p.score
+        row["mode"] = "arcade" if r.is_arcade() else "quiz"
+        row["final"] = row["score"] + bonus + p.score
         row["rating"] = lo.rating()
         row["stolen"] = p.stolen
+        row["arcadeLevel"] = p.arcade_level
+        row["arcadeCleared"] = p.arcade_cleared
         row["loadout"] = lo.public()
 
     standings.sort(key=lambda x: -x.get("final", x["score"]))
@@ -1666,6 +2010,13 @@ async def ws_endpoint(ws: WebSocket):
                     continue
                 pid = msg.get("pid") or \
                     f"p{int(time.time()*1000)%100000}{random.randint(10,99)}"
+                if pid not in room.players and \
+                        len([p for p in room.players.values() if p.joined]) >= MAX_SEATS:
+                    if room.phase == "lobby" and room.lobby_bots > 0:
+                        set_lobby_bots(room, room.lobby_bots - 1)
+                    else:
+                        await send(ws, {"t": "join_error", "reason": "ROOM FULL"})
+                        continue
                 me = room.players.get(pid) or Player(pid=pid)
                 me.ws = ws
                 me.connected = True
@@ -1698,11 +2049,22 @@ async def ws_endpoint(ws: WebSocket):
                     await reset_to_lobby(room)
                 continue
 
+            if t == "bots":
+                if is_host and ws in room.hosts and room.phase in ("lobby", "results"):
+                    try:
+                        set_lobby_bots(room, int(msg.get("n", 0)))
+                    except (TypeError, ValueError):
+                        pass
+                    await push_state(room)
+                continue
+
             if t == "return_lobby":
                 if me and me.ws is ws:
                     me.lobby_only = True
                     me.minigame = ""
                     me.strikes = 0
+                    me.arcade_next_at = 0.0
+                    me.arcade_token += 1
                     if room.quiz:
                         room.quiz.live.pop(me.pid, None)
                         room.quiz.queued.pop(me.pid, None)
@@ -1741,11 +2103,11 @@ async def ws_endpoint(ws: WebSocket):
                 me.heading = float(msg.get("h", 0))
 
             elif t == "pass":
-                if room.phase == "round":
+                if room.phase == "round" and not room.is_arcade():
                     await handle_pass(room, me, msg)
 
             elif t == "reroll":
-                if room.phase == "round":
+                if room.phase == "round" and not room.is_arcade():
                     await reroll_question(room, me, int(msg.get("inst", -1)))
 
             elif t == "install_part":
@@ -1753,7 +2115,7 @@ async def ws_endpoint(ws: WebSocket):
                     await install_pending_part(room, me, int(msg.get("token", -1)))
 
             elif t == "quiz_answer":
-                if room.phase == "round":
+                if room.phase == "round" and not room.is_arcade():
                     iid = msg.get("inst")
                     await resolve_answer(room, me, int(msg.get("choice", -1)),
                                          int(iid) if iid is not None else None)
@@ -1769,13 +2131,19 @@ async def ws_endpoint(ws: WebSocket):
                                    msg.get("dir", ""))
 
             elif t == "strike":
-                if room.phase == "round":
+                if room.phase == "round" and not room.is_arcade():
                     await handle_strike(room, me, msg)
 
             elif t == "minigame_result":
                 if me.minigame:
-                    await end_minigame(room, me, bool(msg.get("success")),
-                                       me.minigame)
+                    if room.is_arcade() and room.phase == "round":
+                        tok = msg.get("token")
+                        await end_arcade_game(
+                            room, me, bool(msg.get("success")),
+                            int(tok) if tok is not None else None)
+                    else:
+                        await end_minigame(room, me, bool(msg.get("success")),
+                                           me.minigame)
 
             elif t == "trade":
                 await handle_trade(room, me, msg)
@@ -1813,6 +2181,34 @@ async def ws_endpoint(ws: WebSocket):
                     await push_state(room)
                 except Exception:
                     pass
+
+
+@app.post("/api/room/{code}/mode")
+async def set_room_mode(code: str, request: Request, mode: str = Form(...)):
+    """
+    Switch the room between the arcade ladder and an ordinary question bank.
+
+    Arcade needs no generation and no API key, so it is a plain state change
+    rather than a job — the host picks the tab and the next match is games.
+    """
+    room = ROOMS.get(code.upper())
+    if not room:
+        raise HTTPException(404, "Room not found")
+    if not hmac.compare_digest(request.headers.get('x-scramble-host-token', ''), room.host_token):
+        raise HTTPException(403, "Host authorization required")
+    if room.phase not in ("lobby", "results"):
+        raise HTTPException(409, "The mode may only change in the lobby or after a dogfight")
+    if room.generation_busy:
+        raise HTTPException(409, "A question bank is still generating")
+    mode = mode.strip().lower()
+    if mode not in ("arcade", "default"):
+        raise HTTPException(400, "Choose arcade or default")
+    room.question_mode = mode
+    room.generation_error = ""
+    if mode == "arcade":
+        room.question_deck = None
+    await push_state(room)
+    return {"ok": True, "mode": room.question_mode}
 
 
 @app.post("/api/room/{code}/questions")

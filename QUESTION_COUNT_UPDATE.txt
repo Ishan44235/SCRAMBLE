@@ -1,7 +1,0 @@
-Question bank updates
-
-- Host can select 10, 20, 30, 50, 75, or 100 questions to generate in both Trivia and Study.
-- Progress bar and status text now use the selected total.
-- Removed repeated retry and thorough validation loops; generates each batch once.
-- Basic format checks remain for four options and the answer index, so the game can score accurately.
-- Existing bank is preserved if a batch fails.

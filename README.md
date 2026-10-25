@@ -1,252 +1,53 @@
 # SCRAMBLE
 
-*Deployed at **mergeconflictatmach2.study***
+A retro arcade party game for 3–12 players in one room. Everyone plays on their phone; one laptop or TV is the big screen.
 
-A retro pixel-art arcade party game for phones in one room.
+**Earn jet parts → vote on the biggest threat → dogfight with the jet you built.**
 
-**Answer trivia → build a fighter jet → dogfight with what you earned.**
-Everyone has a secret agenda. Before the fight, the table marks one pilot as
-**the Threat**, who flies with a 3× bounty on their head and an afterburner to
-survive it.
+## Getting in
 
-No app install — players scan a QR code or type a 4-letter room code.
+1. One person opens the site and hits **HOST GAME** on the big screen.
+2. Everyone else scans the QR code or enters the 4-letter room code. No app needed.
+3. The host picks a mode, adds bots if the table is short, and hits **START**.
 
----
+## Modes
 
-## Running it locally
+**TRIVIA**: AI-generated questions on any topic (Easy / Medium / Hard).
 
-```bash
+**STUDY**: Upload a lecture PDF and the AI writes questions from it. Set the class's comfort level: **Shaky** gets easier recall questions, **Steady** a mix, **Confident** harder application questions.
+
+**ARCADE**: No questions. Climb a ladder of 5-second tilt games: Ring Run, Missile Dodge, Canyon Run, Lock-On and Supply Drop. Clear a level to earn a part; each level is harder and pays rarer parts. Miss and you drop a level.
+
+## During a round
+
+- **Tap** to answer. **Shake** to reroll a question (2 per round).
+- **Slide** the phone left or right to pass a question you don't know. Passed questions get hotter and pay out better parts.
+- **Rotate** the phone about 50° to install a part you've won.
+- **Any 3 right answers** load a missile. **Push the phone forward** to fire it at a random pilot, who has to tilt to dodge a barrage or lose their best part.
+- **3 wrong in a row** drops you into a ring run.
+- Won a part that isn't an upgrade? It arrives as a ticking crate: **KEEP IT** or **pass it** to a neighbour, and it goes up a tier on the way.
+
+## Your jet
+
+Five bays (engine, guns, missiles, wings, armor) and five tiers, from Common to Legendary. Better parts make a faster, tougher, deadlier jet.
+
+## The finale
+
+1. **Discuss**: argue about who's the most dangerous.
+2. **Threat vote**: the marked pilot gets an afterburner and a 3× bounty on their head.
+3. **Dogfight**: bank the phone to steer, tilt forward and back for throttle, and hold **FIRE**.
+
+Everyone also has a **secret agenda** (Magpie, Duelist, Scavenger and others) that pays bonus points and makes them act a little suspicious.
+
+## Winning
+
+**Final score = quiz or arcade points + dogfight score + agenda bonus.** The top three take the podium on the big screen, and everyone's agenda is revealed.
+
+## Running it
+
+```
 pip install -r requirements.txt
 python server.py
 ```
 
-Open the printed address. You'll get the arcade home screen:
-
-- **HOST GAME** creates a room and puts the big screen up (QR + room code)
-- **JOIN GAME** asks for the 4-letter code
-
-Several groups can play at once — each room is completely independent.
-
-**Testing alone:** click **SOLO TEST** on the host display. It fills the room
-with stand-in pilots who pass questions at you and fly in the dogfight.
-
----
-
-## Deploying to Render
-
-The game is called **SCRAMBLE**; `mergeconflictatmach2.study` is just where it
-lives. Nothing in the code depends on the domain.
-
-The game is a stateful WebSocket server, so static hosts (Netlify, GitHub
-Pages, Vercel's static tier) **cannot** run it. Render works well.
-
-### 1. Push to GitHub
-
-```bash
-git init && git add -A
-git commit -m "Merge Conflict at Mach 2"
-git branch -M main
-git remote add origin https://github.com/<you>/<repo>.git
-git push -u origin main
-```
-
-### 2. Create the service
-
-In Render: **New → Web Service → connect your repo.** `render.yaml` is
-included, so Render will offer to use it. If you'd rather fill the form in by
-hand:
-
-| Field | Value |
-|---|---|
-| Runtime | Python 3 |
-| Build command | `pip install -r requirements.txt` |
-| Start command | `uvicorn server:app --host 0.0.0.0 --port $PORT --workers 1` |
-| Health check path | `/api/health` |
-
-**Keep it to one worker.** Rooms are held in memory, so a second worker would
-put players in a different copy of the room from the host and the game would
-silently break.
-
-Free instances sleep after ~15 minutes idle and take ~50 seconds to wake. For a
-demo, use the Starter plan or hit the URL a minute before you present.
-
-### 3. Point the domain at it
-
-In **Render → your service → Settings → Custom Domains**, add both
-`mergeconflictatmach2.study` and `www.mergeconflictatmach2.study`. Render shows
-you the DNS records it wants.
-
-Then in **Porkbun → your domain → DNS**:
-
-| Type | Host | Value |
-|---|---|---|
-| ALIAS (or CNAME) | *blank / @* | the `...onrender.com` hostname Render gave you |
-| CNAME | `www` | the same `...onrender.com` hostname |
-
-Porkbun supports ALIAS on the root, which is what you want — a root CNAME is
-not valid DNS. Delete Porkbun's default parking records first or they'll
-conflict.
-
-DNS usually propagates in minutes; Render issues the TLS certificate
-automatically once it resolves.
-
-### 4. Nothing else to configure
-
-QR codes and join links are built from the incoming request (honouring
-`X-Forwarded-Host`/`X-Forwarded-Proto`), so they point at your real domain with
-no env vars set. If you ever want to force it, set `PUBLIC_URL` to
-`https://mergeconflictatmach2.study`.
-
-**HTTPS matters here beyond the padlock:** iOS refuses motion sensor access on
-plain HTTP, so tilt controls only work once the site is served over HTTPS.
-Deploying to Render fixes that for free.
-
----
-
-## The game
-
-### 1. Quiz — build the jet
-
-A question lands on your phone with a timer. **Tilt toward an answer, twist to
-lock it in.** If you don't know it, **flick the phone at someone** to dump it
-on them.
-
-Each pass makes the question *hotter*: the clock shrinks and the payout
-multiplies. Hot questions drop rarer parts, so the question nobody wanted is
-the one worth taking.
-
-Every correct answer earns a part for one of five bays — **engine, guns,
-missiles, wings, armor** — in five rarity tiers:
-
-`COMMON` → `UNCOMMON` → `RARE` → `EPIC` → `LEGENDARY`
-
-A better part upgrades the bay. Your jet is drawn live above the question and
-changes colour as you fit things.
-
-### 2. Cards — every 20 seconds
-
-**Powers:** Mystery Crate (sealed, opens in the hangar), Fifty-Fifty, Tailwind
-(next correct answer drops as if red hot), Deflector.
-
-**Handicaps:** Rust (corrodes your best part a tier), Locked Bay, Hot Hands,
-Blind Spot.
-
-### 3. The Threat Vote
-
-Not a whodunnit — a targeting decision. Everyone marks the pilot they think is
-most dangerous. The marked pilot gets a **3× bounty** on them, and an
-**afterburner** to survive it. Guessing right earns you nothing; it just paints
-a target.
-
-### 4. Dogfight
-
-Bank the phone to turn, pitch forward for throttle, hold **GUNS**, tap
-**MISSILE**. All jets fly on one screen.
-
----
-
-## Secret agendas
-
-Everyone draws one. Nobody is a traitor — each agenda pushes you toward
-behaviour that looks suspicious for a *different* reason.
-
-| Agenda | Also known as | Wins by |
-|---|---|---|
-| **Magpie** | The Shiny Thief | Finishing with the rarest single part at the table |
-| **Duelist** | The Dogfight Ace | Shooting down one secret rival, repeatedly |
-| **Scavenger** | The Scrap Baron | Tearing parts off jets they down, mid-fight |
-| **Mechanic** | The Grease Wizard | Forcing a part swap in discussion and coming out ahead |
-| **Inspector** | The Parts Inspector | Strip-inspecting the pilot the table ends up marking |
-| **Quartermaster** | The Supply Line | Parts fitted by pilots they passed questions to |
-| **Featherweight** | The Bare Airframe | Finishing with 3 bays or fewer |
-
-Final score = dogfight score + agenda bonus. Agendas reveal at the end, which
-is when everyone finds out why you kept dumping questions on them.
-
----
-
-## Your own questions
-
-Edit `questions.json`:
-
-```json
-{
-  "title": "My Deck",
-  "questions": [
-    { "q": "Question text?",
-      "options": ["right answer", "wrong", "wrong", "wrong"],
-      "answer": 0 }
-  ]
-}
-```
-
-`answer` is the index of the correct option. Options are shuffled per player
-per question at runtime, so keeping the answer at index 0 throughout the file
-gives nothing away.
-
-**The answer key never leaves the server.** Players receive the question text
-and shuffled options only; correctness is decided server-side on commit.
-Opening devtools tells you nothing.
-
----
-
-## Files
-
-```
-server.py            Rooms, match state machine, agendas, Threat Vote
-quiz.py              Question engine — dealing, scoring, heat, queueing
-parts.py             Jet loadout — 5 bays x 5 tiers, drops, rust, scavenging
-dogfight.py          30 Hz flight sim — jets, bullets, homing missiles
-questions.json       The question deck. Edit this.
-render.yaml          Render deployment config
-launch.py            Local one-click startup (deps, tunnel, browser)
-START.bat            Windows launcher — local Wi-Fi
-START-TUNNEL.bat     Windows launcher — public HTTPS tunnel
-static/
-  index.html         Arcade home screen — HOST / JOIN
-  host.html          Big screen — QR, lobby, scores, arena, reveal
-  player.html        Phone client
-  css/style.css      Design system
-  js/skyfield.js     Animated pixel sky — jets, contrails, tracers, clouds
-  js/quizmode.js     Quiz UI and two-axis tilt answering
-  js/jetparts.js     Pixel jets, coloured by your loadout
-  js/dogfightclient.js  Hangar, cockpit HUD, flight controls
-  js/avatars.js      10 pixel-art animal avatars
-  js/motion.js       Sensor permissions, filtering, gesture detection
-  js/player.js       Phone client state machine
-```
-
----
-
-## Known rough edges
-
-- **Rooms live in memory.** Restarting the server drops every room. Fine for a
-  demo; a real deployment would want Redis.
-- **Compass passing is unreliable indoors.** The aim screen has a tap-a-name
-  fallback for exactly this — don't remove it.
-- **Free Render instances sleep.** First visitor waits ~50 seconds.
-- Phones that lock mid-game reconnect and keep their pilot, but miss whatever
-  happened while the screen was off.
-
-## Grok AI trivia and study banks
-
-See `GROK_SETUP.txt` for setup. Enter your xAI API key in the root `.env` as `XAI_API_KEY=...`, or set it in Render's environment. Trivia generates questions from a topic, and Study generates questions from the extractable text in an uploaded lecture PDF (max 8 MB). The host selects 10, 20, 30, 50, 75 or 100 questions. Generated answer keys stay server-side. Progress appears on the host screen.
-
-### Scanned/image-based lecture PDF support
-Study mode supports both text PDFs and image-only slide PDFs. When no selectable text
-is available, the server renders up to 35 PDF pages and sends the images securely
-to Grok vision to make source-grounded notes before generating quiz questions.
-Requires PyMuPDF (automatically installed by the Windows launcher). Vision
-requests may take longer and use more xAI API tokens than text-only PDFs.
-
-### AI provider choice and usage optimization
-In the host's question-bank panel, choose **Grok** or **Gemini** and a count (10, 20, 30, 50, 75, 100). Both providers generate the entire bank in **one API request**, with no second model validation or separate scanned-PDF transcription call. A minimal local check confirms four choices and a correct-answer index. The previous bank is preserved if a request fails.
-
-Set the keys in `.env` (do not commit them):
-```
-XAI_API_KEY=PASTE_YOUR_GROK_KEY_HERE
-XAI_MODEL=grok-4.7
-GEMINI_API_KEY=PASTE_YOUR_GEMINI_KEY_HERE
-GEMINI_MODEL=gemini-2.5-flash
-```
-You only need the key for the provider selected. For scanned lecture PDFs, images are resized and JPEG-compressed and sent directly with the question request; searchable PDFs use text extraction instead. Larger banks and scanned PDFs still inherently consume more tokens. Generation progress stays at zero until the single response arrives, then updates to the completed count. Model access, pricing, response size limits and output quality depend on your API account and selected model.
+Put `XAI_API_KEY` and/or `GEMINI_API_KEY` in `.env` for Trivia and Study (Arcade needs no key). iPhones need HTTPS for motion controls, so use `START-TUNNEL.bat` or deploy to Render.

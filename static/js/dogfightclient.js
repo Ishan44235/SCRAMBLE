@@ -75,6 +75,21 @@ function renderJetStrip(pulseSlot) {
   $('jsRating').textContent = rating;
   $('jsCrates').textContent = FIGHT.crates > 0
     ? `${FIGHT.crates} CRATE${FIGHT.crates === 1 ? '' : 'S'}` : '';
+
+  // the arcade screen carries its own copy of the bays, since arcade
+  // players never see the quiz screen this strip normally lives on
+  const mini = $('mgSlots');
+  if (mini) {
+    mini.innerHTML = SLOTS.map(slot => {
+      const p = lo && lo[slot];
+      const col = p ? TIER_COLOR[p.tier] : TIER_COLOR.empty;
+      return `<div class="mg-bay${p ? '' : ' empty'}${slot === pulseSlot ? ' pulse' : ''}"
+                   style="border-bottom-color:${col}">
+        ${partIconSVG(slot, p ? p.tier : 'empty', 18)}
+        <span>${SLOT_LABEL[slot]}</span>
+      </div>`;
+    }).join('');
+  }
 }
 
 function setCrates(n) {
@@ -227,6 +242,44 @@ function buildTradePanel() {
 }
 
 /* ------------------------------------------------------------ flight */
+/**
+ * Your own jet in the cockpit view: the same pixel silhouette as the hangar,
+ * coloured by your loadout, drawn once and then banked with CSS. Redrawing
+ * only when the loadout changes keeps the 60fps loop cheap.
+ */
+function drawCockpitJet() {
+  const cv = $('hzPixJet');
+  if (!cv) return;
+  const px = 6;
+  const rows = JET_MAP.length, cols = JET_MAP[0].length;
+  cv.width = cols * px;
+  cv.height = rows * px;
+  const c = cv.getContext('2d');
+  c.imageSmoothingEnabled = false;
+  c.clearRect(0, 0, cv.width, cv.height);
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const ch = JET_MAP[y][x];
+      if (ch === '.') continue;
+      let col = regionColor(ch, FIGHT.loadout);
+      if (!col) continue;
+      if (x < cols / 2 - 1) col = shadeHex(col, 0.14);
+      else if (x > cols / 2 + 1) col = shadeHex(col, -0.2);
+      c.fillStyle = col;
+      c.fillRect(x * px, y * px, px, px);
+      // a one-pixel dark outline on the silhouette edge, so the jet reads
+      // against a bright sky instead of dissolving into it
+      const edge = (yy, xx) => yy < 0 || xx < 0 || yy >= rows || xx >= cols ||
+        JET_MAP[yy][xx] === '.';
+      c.fillStyle = 'rgba(5,7,12,.55)';
+      if (edge(y - 1, x)) c.fillRect(x * px, y * px, px, 1);
+      if (edge(y + 1, x)) c.fillRect(x * px, y * px + px - 1, px, 1);
+      if (edge(y, x - 1)) c.fillRect(x * px, y * px, 1, px);
+      if (edge(y, x + 1)) c.fillRect(x * px + px - 1, y * px, 1, px);
+    }
+  }
+}
+
 function startFight() {
   FIGHT.on = true;
   FIGHT.steer = 0;
@@ -235,6 +288,7 @@ function startFight() {
   if (!loopRunning) startLoop();
   if (motion.live) motion.calibrateTilt();
   show('s-fight');
+  drawCockpitJet();
   wireFightControls();
 
   // stream control input at a steady 20 Hz rather than on every sensor event
@@ -283,16 +337,12 @@ function fightTick() {
     FIGHT.throttle = 0.5;
   }
 
-  // horizon mirrors the bank so the control is readable
-  const sky = $('hzSky');
-  if (sky) {
-    FIGHT.skyScroll = (FIGHT.skyScroll + (0.55 + FIGHT.throttle * 2.2)) % 240;
-    const drift = FIGHT.steer * 18;
-    sky.style.transform = `translate(${(drift * -0.35).toFixed(1)}px, ${(FIGHT.throttle * 7).toFixed(1)}px) rotate(${(-FIGHT.steer * 18).toFixed(1)}deg)`;
-  }
   const tp = Math.round(FIGHT.throttle * 100);
-  $('fThrottle').style.width = tp + '%';
+  $('fThrottle').style.height = tp + '%';
   $('fThrottleV').textContent = tp + '%';
+  // your jet rolls with the stick, the sky counter-rolls behind it
+  const jet = $('hzPixJet');
+  if (jet) jet.style.transform = `rotate(${(FIGHT.steer * 22).toFixed(1)}deg)`;
   const glow = $('hzJetGlow');
   if (glow) {
     const scale = 0.72 + FIGHT.throttle * 0.9;
@@ -351,55 +401,166 @@ function fightFx(kind, xPct, yPct) {
   el.addEventListener('animationend', () => el.remove());
 }
 
+/* ------------------------------------------------------------- canopy
+   The view out of the cockpit, drawn at one third resolution and scaled up
+   with pixelated rendering — the cheap way to get chunky retro pixels, and
+   cheap enough to redraw every frame on any phone.
+
+   Sky is a few hard colour bands (no gradients), clouds slide sideways as
+   your heading changes so turning is visible, ground stripes rush toward
+   you faster with throttle, and the whole horizon counter-rolls as you bank.
+*/
+const CANOPY = { clouds: null, scroll: 0, last: 0 };
+const SKY_BANDS = ['#8fc6f5', '#76b4f0', '#5c9ee8', '#4686dc', '#346fcc', '#2858b4', '#1f468f'];
+const CLOUD_ROWS = ['..XXXX....', '.XXXXXXX..', 'XXXXXXXXXX', '.XXXXXXXX.'];
+
+function drawCanopy() {
+  const cv = $('hzCanvas');
+  if (!cv) return;
+  const cw = cv.clientWidth, ch = cv.clientHeight;
+  if (!cw || !ch) return;
+  const S = 3;                              // art pixel = 3 screen pixels
+  const W = Math.ceil(cw / S), H = Math.ceil(ch / S);
+  if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+  const c = cv.getContext('2d');
+  c.imageSmoothingEnabled = false;
+
+  const now = performance.now();
+  const dt = CANOPY.last ? Math.min(0.05, (now - CANOPY.last) / 1000) : 0;
+  CANOPY.last = now;
+  CANOPY.scroll = (CANOPY.scroll + dt * (0.6 + FIGHT.throttle * 2.4)) % 1;
+
+  if (!CANOPY.clouds) {
+    CANOPY.clouds = [];
+    for (let i = 0; i < 9; i++) {
+      CANOPY.clouds.push({ a: i * 40 + Math.random() * 30, y: 6 + Math.random() * 34,
+                           s: 2 + Math.floor(Math.random() * 2) });
+    }
+  }
+
+  const heading = FIGHT.me ? FIGHT.me.heading : 0;
+  const bank = -FIGHT.steer * 0.34;        // radians, counter-roll
+  const horizonY = Math.round(H * 0.6 - (FIGHT.throttle - 0.5) * H * 0.08);
+
+  c.save();
+  c.translate(Math.round(W / 2), horizonY);
+  c.rotate(bank);
+  const R = Math.ceil(Math.hypot(W, H));   // big enough to cover when rolled
+
+  // sky: hard bands climbing away from the horizon
+  const bandH = Math.ceil(H * 0.1);
+  c.fillStyle = SKY_BANDS[SKY_BANDS.length - 1];
+  c.fillRect(-R, -R, R * 2, R);
+  for (let i = 0; i < SKY_BANDS.length; i++) {
+    c.fillStyle = SKY_BANDS[i];
+    c.fillRect(-R, -(i + 1) * bandH, R * 2, bandH);
+  }
+
+  // clouds: placed on a 360° ring around you, so turning slides them
+  const pxPerDeg = W / 70;
+  for (const cl of CANOPY.clouds) {
+    let rel = ((cl.a - heading + 540) % 360) - 180;
+    const x = Math.round(rel * pxPerDeg);
+    if (Math.abs(x) > R) continue;
+    const y = -Math.round(cl.y * H / 60) - 4;
+    for (let r = 0; r < CLOUD_ROWS.length; r++)
+      for (let k = 0; k < CLOUD_ROWS[r].length; k++) {
+        if (CLOUD_ROWS[r][k] !== 'X') continue;
+        c.fillStyle = r === CLOUD_ROWS.length - 1 ? '#c9e2f7' : '#ffffff';
+        c.fillRect(x + k * cl.s - 5 * cl.s, y + r * cl.s, cl.s, cl.s);
+      }
+  }
+
+  // ground: stripes in perspective, rushing toward you
+  c.fillStyle = '#3f7d36';
+  c.fillRect(-R, 0, R * 2, R);
+  const groundH = H - horizonY + R;
+  for (let i = 0; i < 14; i++) {
+    const z = ((i + CANOPY.scroll) / 14);
+    const y0 = Math.round(Math.pow(z, 2.2) * groundH);
+    const y1 = Math.round(Math.pow(z + 0.5 / 14, 2.2) * groundH);
+    c.fillStyle = '#4a9140';
+    c.fillRect(-R, y0, R * 2, Math.max(1, y1 - y0));
+  }
+  // horizon haze line
+  c.fillStyle = '#cfe9ff';
+  c.fillRect(-R, -1, R * 2, 1);
+  c.fillStyle = '#6aa85a';
+  c.fillRect(-R, 0, R * 2, 1);
+  c.restore();
+}
+
 /**
- * Cockpit minimap: every jet as a blip, yours green and pointed, enemies
- * red. Coarse by design — it tells you where the fight is, not how to aim.
+ * Cockpit radar: the whole arena as a top-down map. Yours is a green arrow,
+ * enemies are red blips tagged with the first letters of their name, the
+ * wreck of anyone respawning is a grey cross. Coarse by design — it tells you
+ * where the fight is, the canopy tells you how to aim.
  */
 function drawMinimap(blips, arena) {
   const cv = $('fMinimap');
   if (!cv || !blips) return;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   const w = cv.clientWidth, h = cv.clientHeight;
-  if (cv.width !== w * dpr) { cv.width = w * dpr; cv.height = h * dpr; }
+  if (!w || !h) return;
+  if (cv.width !== Math.round(w * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
   const c = cv.getContext('2d');
   c.setTransform(dpr, 0, 0, dpr, 0, 0);
-  c.clearRect(0, 0, w, h);
+  c.fillStyle = '#041009';
+  c.fillRect(0, 0, w, h);
 
   // arena is sent divided by 16 on the server side
   const AW = (arena ? arena[0] : 1600) / 16;
   const AH = (arena ? arena[1] : 900) / 16;
   const sx = w / AW, sy = h / AH;
 
-  c.strokeStyle = 'rgba(48,163,108,.18)';
+  c.strokeStyle = 'rgba(48,163,108,.16)';
   c.lineWidth = 1;
-  for (let i = 1; i < 4; i++) {
-    c.beginPath(); c.moveTo((w / 4) * i, 0); c.lineTo((w / 4) * i, h); c.stroke();
+  for (let i = 1; i < 8; i++) {
+    const x = Math.round((w / 8) * i) + 0.5;
+    c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke();
   }
-  c.beginPath(); c.moveTo(0, h / 2); c.lineTo(w, h / 2); c.stroke();
+  for (let i = 1; i < 4; i++) {
+    const y = Math.round((h / 4) * i) + 0.5;
+    c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke();
+  }
 
+  c.font = '700 8px "JetBrains Mono", monospace';
+  c.textBaseline = 'middle';
+  const mineBlip = blips.find(b => b.p === STATE.pid);
+
+  // enemies first, so your own arrow is always on top
   blips.forEach(b => {
-    const x = b.x * sx, y = b.y * sy;
-    const mine = b.p === STATE.pid;
+    if (b.p === STATE.pid) return;
+    const x = Math.round(b.x * sx), y = Math.round(b.y * sy);
     if (!b.a) {
-      c.fillStyle = 'rgba(120,130,155,.45)';
-      c.fillRect(x - 1.5, y - 1.5, 3, 3);
+      c.strokeStyle = 'rgba(140,150,170,.55)';
+      c.beginPath(); c.moveTo(x - 3, y - 3); c.lineTo(x + 3, y + 3);
+      c.moveTo(x + 3, y - 3); c.lineTo(x - 3, y + 3); c.stroke();
       return;
     }
-    if (mine) {
-      // yours is an arrow so you can read your own heading at a glance
-      c.save();
-      c.translate(x, y);
-      c.rotate((b.h * 15 + 90) * Math.PI / 180);
-      c.fillStyle = '#6ef0a8';
-      c.beginPath();
-      c.moveTo(0, -5); c.lineTo(3.5, 4); c.lineTo(-3.5, 4);
-      c.closePath(); c.fill();
-      c.restore();
-    } else {
-      c.fillStyle = '#ff6b70';
-      c.fillRect(x - 2, y - 2, 4, 4);
-    }
+    c.fillStyle = '#ff6b70';
+    c.fillRect(x - 3, y - 3, 6, 6);
+    c.fillStyle = '#2a0b10';
+    c.fillRect(x - 1, y - 1, 2, 2);
+    c.fillStyle = 'rgba(255,190,193,.85)';
+    c.textAlign = x > w - 30 ? 'right' : 'left';
+    c.fillText(String(b.n || '').slice(0, 4), x + (x > w - 30 ? -6 : 6), y);
   });
+
+  if (mineBlip) {
+    const x = mineBlip.x * sx, y = mineBlip.y * sy;
+    // a soft ring so you can find yourself instantly in a busy fight
+    c.strokeStyle = 'rgba(110,240,168,.35)';
+    c.beginPath(); c.arc(x, y, 11, 0, Math.PI * 2); c.stroke();
+    c.save();
+    c.translate(x, y);
+    c.rotate((mineBlip.h * 15 + 90) * Math.PI / 180);
+    c.fillStyle = mineBlip.a ? '#6ef0a8' : 'rgba(110,240,168,.35)';
+    c.beginPath();
+    c.moveTo(0, -7); c.lineTo(5, 5); c.lineTo(0, 2); c.lineTo(-5, 5);
+    c.closePath(); c.fill();
+    c.restore();
+  }
 }
 
 function wrapDelta(d, size) {
@@ -412,32 +573,45 @@ function angleTo(a, b) {
   return ((b - a + 540) % 360) - 180;
 }
 
-function contactPlaneSVG() {
-  return `<svg viewBox="0 0 52 34" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
-    <rect x="24" y="2" width="4" height="28" fill="#ffd5d7"/>
-    <rect x="22" y="0" width="8" height="6" fill="#fff0f1"/>
-    <rect x="18" y="8" width="16" height="14" fill="#ff7f86"/>
-    <rect x="9" y="13" width="13" height="6" fill="#ff6570"/>
-    <rect x="30" y="13" width="13" height="6" fill="#ff6570"/>
-    <rect x="4" y="11" width="5" height="10" fill="#ff4d5f"/>
-    <rect x="43" y="11" width="5" height="10" fill="#ff4d5f"/>
-    <rect x="18" y="24" width="6" height="7" fill="#ff6570"/>
-    <rect x="28" y="24" width="6" height="7" fill="#ff6570"/>
-    <rect x="23" y="10" width="6" height="7" fill="#ffe6e7" opacity=".9"/>
-  </svg>`;
+/* Enemy contacts are the same pixel jet everyone flies, in hostile red, so
+   what you see out of the canopy matches what the big screen shows. Built
+   once and cached — every fight_me frame reuses the string. */
+let CONTACT_SVG = null;
+let CONTACT_LOCK_SVG = null;
+function pixelJetSVG(body, hi, lo, canopy) {
+  const rows = JET_MAP.length, cols = JET_MAP[0].length;
+  let cells = '';
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const ch = JET_MAP[y][x];
+      if (ch === '.') continue;
+      const col = ch === 'C' ? canopy
+        : (x < cols / 2 - 1 ? hi : (x > cols / 2 + 1 ? lo : body));
+      cells += `<rect x="${x}" y="${y}" width="1" height="1" fill="${col}"/>`;
+    }
+  }
+  return `<svg viewBox="0 0 ${cols} ${rows}" xmlns="http://www.w3.org/2000/svg" ` +
+         `shape-rendering="crispEdges">${cells}</svg>`;
+}
+function contactPlaneSVG(locked) {
+  if (!CONTACT_SVG) {
+    CONTACT_SVG = pixelJetSVG('#e5484d', '#ff7f86', '#a02a33', '#2a0b10');
+    CONTACT_LOCK_SVG = pixelJetSVG('#f5a524', '#ffd48a', '#b0700e', '#2a1a05');
+  }
+  return locked ? CONTACT_LOCK_SVG : CONTACT_SVG;
 }
 
+/* Off-screen contacts: a chunky pixel chevron pinned to the canopy edge. */
 function contactArrowSVG(dir) {
-  if (dir === 'left') {
-    return `<svg viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
-      <polygon points="3,14 23,3 23,25" fill="#ff5f69"/>
-      <polygon points="7,14 21,6 21,22" fill="#ffd0d3" opacity=".6"/>
-    </svg>`;
-  }
-  return `<svg viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
-    <polygon points="25,14 5,3 5,25" fill="#ff5f69"/>
-    <polygon points="21,14 7,6 7,22" fill="#ffd0d3" opacity=".6"/>
-  </svg>`;
+  const rows = dir === 'left'
+    ? ['...XX', '..XXX', '.XXXX', 'XXXXX', '.XXXX', '..XXX', '...XX']
+    : ['XX...', 'XXX..', 'XXXX.', 'XXXXX', 'XXXX.', 'XXX..', 'XX...'];
+  let cells = '';
+  for (let y = 0; y < rows.length; y++)
+    for (let x = 0; x < 5; x++)
+      if (rows[y][x] === 'X')
+        cells += `<rect x="${x}" y="${y}" width="1" height="1" fill="${y === 3 ? '#ffd0d3' : '#ff5f69'}"/>`;
+  return `<svg viewBox="0 0 5 7" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">${cells}</svg>`;
 }
 
 function escapeTargetName(s) { return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
@@ -474,16 +648,24 @@ function drawContacts(me, blips, arena) {
       const lane = visCount++ % 3;
       const x = 50 + (e.rel / FOV) * 42;
       const top = 14 + (1 - (e.dist / range)) * 28 + lane * 8;
-      const h = Math.round(size * 0.64);
-      const cls = e.pid === (lock && lock.pid) ? 'hz-contact plane assist' : 'hz-contact plane';
-      return `<div class="${cls}" style="left:calc(${x}% - ${size / 2}px);top:${top}%;width:${size}px;height:${h}px">${contactPlaneSVG()}<span class="hz-target-label">${escapeTargetName(e.name)} · ${Math.round(Math.max(0, e.hp))} HP</span></div>`;
+      const h = Math.round(size * JET_MAP.length / JET_MAP[0].length);
+      const isLock = e.pid === (lock && lock.pid);
+      const cls = isLock ? 'hz-contact plane assist' : 'hz-contact plane';
+      const hpPct = Math.round(Math.max(0, Math.min(1, e.hp / e.maxHp)) * 100);
+      // Only the jet you are locked onto gets a name tag; everyone else just
+      // carries a slim health bar. A canopy full of labels is unreadable.
+      const tag = isLock
+        ? `<span class="hz-target-label"><b>${escapeTargetName(e.name)}</b><i class="hz-hp"><s style="width:${hpPct}%"></s></i></span>`
+        : `<i class="hz-hp solo"><s style="width:${hpPct}%"></s></i>`;
+      return `<div class="${cls}" style="left:calc(${x}% - ${size / 2}px);top:${top}%;width:${size}px;height:${h}px">${contactPlaneSVG(isLock)}${tag}</div>`;
     }
 
     const side = e.rel < 0 ? 'left' : 'right';
     const lane = side === 'left' ? leftCount++ : rightCount++;
-    const top = 12 + lane * 17 + pop * 22;
-    const h = Math.round(size * 0.88);
-    return `<div class="hz-contact tri ${side}" style="${side}:6px;top:${top}%;width:${size}px;height:${h}px">${contactArrowSVG(side)}<span class="hz-target-label ${side}">${escapeTargetName(e.name)} · ${Math.round(Math.max(0,e.hp))} HP</span></div>`;
+    if (lane > 2) return '';              // three edge arrows per side is plenty
+    const top = 18 + lane * 14;
+    const w = Math.round(11 + pop * 8);
+    return `<div class="hz-contact tri ${side}" style="${side}:8px;top:${top}%;width:${w}px;height:${Math.round(w * 1.4)}px">${contactArrowSVG(side)}</div>`;
   }).join('');
 }
 
@@ -545,22 +727,48 @@ function fightMe(m) {
 
 function fightOver(m) {
   stopFight();
-  const idx = m.standings.findIndex(s => s.pid === STATE.pid);
-  const me = m.standings[idx];
-  $('resEyebrow').textContent = idx === 0 ? 'TOP GUN' : `PLACED #${idx + 1}`;
-  $('resTitle').textContent = m.standings[0] ? m.standings[0].name + ' WINS' : '—';
-  $('resTitle').style.color = idx === 0 ? 'var(--good)' : 'var(--text)';
+  showPodium(m.standings || []);
+}
+
+/**
+ * The phone's end screen: your place, the top three on a little podium, and
+ * how your own total was made. Used both when the dogfight ends and when the
+ * room settles into the results phase, so the two can never disagree.
+ */
+function showPodium(standings) {
+  const rows = standings.slice().sort((a, b) => (b.final ?? b.score) - (a.final ?? a.score));
+  const idx = rows.findIndex(s => s.pid === STATE.pid);
+  const me = rows[idx];
+  const arcade = rows.some(r => r.mode === 'arcade');
+  const pts = r => Math.round(r.final ?? r.score ?? 0);
+  const place = ['1ST', '2ND', '3RD'];
+
+  $('resEyebrow').textContent = idx === 0 ? 'TOP GUN' : idx > -1 && idx < 3 ? 'ON THE PODIUM' : 'FINAL STANDINGS';
+  $('resTitle').textContent = idx > -1 ? (idx < 3 ? place[idx] + ' PLACE' : '#' + (idx + 1)) : '—';
+  $('resTitle').style.color = idx === 0 ? 'var(--warn)' : idx > -1 && idx < 3 ? 'var(--good)' : 'var(--text)';
+
   if (me) {
-    const bounty = me.bountyKills
-      ? ` (${me.bountyKills} on the Threat)` : '';
+    const nm = s => escapePartName(String(s || ''));
     $('resReason').innerHTML =
-      `${me.kills} kill${me.kills === 1 ? '' : 's'}${bounty}, ` +
-      `${me.deaths} loss${me.deaths === 1 ? '' : 'es'}.<br>` +
-      `<span style="color:${me.agendaColor}">${me.agendaName}</span> — ` +
-      `${me.agendaNote}, <b>+${me.bonus}</b>.<br>` +
-      `<b style="font-size:20px">${me.final}</b> total`;
+      `<b style="font-size:20px">${pts(me)}</b> points<br>` +
+      `${arcade ? 'Arcade' : 'Quiz'} ${Math.round(me.matchPoints || 0)} · ` +
+      `Dogfight ${Math.round(me.fightScore ?? me.score ?? 0)} ` +
+      `(${me.kills} kill${me.kills === 1 ? '' : 's'}) · ` +
+      `<span style="color:${me.agendaColor}">${nm(me.agendaName)}</span> +${me.bonus || 0}`;
   }
+
+  const order = [1, 0, 2].filter(i => rows[i]);
+  $('resPodium').innerHTML = order.map(i => {
+    const r = rows[i];
+    return `<div class="mp mp-${i + 1}${r.pid === STATE.pid ? ' me' : ''}">
+      ${avatarSVG(r.avatar || 'fox', i === 0 ? 44 : 36, { bg: '#0b0d14' })}
+      <div class="mp-name">${escapePartName(r.name)}</div>
+      <div class="mp-pts">${pts(r)}</div>
+      <div class="mp-step">${i + 1}</div>
+    </div>`;
+  }).join('');
   show('s-results');
+  haptic(idx === 0 ? [40, 60, 40] : 40);
 }
 
 /* ---------------------------------------------------------- controls */
@@ -595,45 +803,67 @@ function wireFightControls() {
 
 const HOT = { crates: [], shoving: null };
 
+/**
+ * Draw the live crates into whichever bars exist: the quiz screen's and the
+ * arcade screen's. Each crate carries its own ◀ / ▶ buttons, so shoving is
+ * one tap in a known direction rather than arm-then-pick-a-neighbour.
+ */
 function renderHot() {
-  const bar = document.getElementById('hotbar');
-  if (!bar) return;
-  if (!HOT.crates.length) { bar.innerHTML = ''; return; }
+  const bars = ['hotbar', 'hotbarMini']
+    .map(id => document.getElementById(id)).filter(Boolean);
+  if (!bars.length) return;
 
-  bar.innerHTML = HOT.crates.map(c => {
+  // who sits either side of you, so the pass buttons can say who gets it
+  const ring = (typeof STATE !== 'undefined' && STATE.ring) || [];
+  const me = ring.find(x => x.pid === STATE.pid);
+  const byPid = Object.fromEntries(ring.map(x => [x.pid, x]));
+  const left = me && byPid[me.left], right = me && byPid[me.right];
+  const nm = x => x ? escapePartName(x.name) : '—';
+
+  const html = HOT.crates.map(c => {
     const col = TIER_COLOR[c.tier] || TIER_COLOR.empty;
     const pct = Math.max(0, Math.min(1, c.left / 10)) * 100;
     const urgent = c.left <= 3.5;
-    return `<div class="hot${urgent ? ' urgent' : ''}" data-cid="${c.cid}"
-                 style="border-bottom-color:${col}">
+    const nextTier = { common: 'uncommon', uncommon: 'rare', rare: 'epic',
+                       epic: 'legendary', legendary: 'legendary' }[c.tier];
+    return `<div class="hot${urgent ? ' urgent' : ''}${c.harmless ? ' harmless' : ''}"
+                 data-cid="${c.cid}" style="border-bottom-color:${col}">
       <span class="hot-passes">${c.passes ? '×' + c.passes : ''}</span>
       <div class="hot-top">
         ${partIconSVG(c.slot, c.tier, 22)}
         <div>
           <div class="hot-name">${c.name}</div>
-          <div class="hot-tier" style="color:${col}">${TIER_LABEL[c.tier]}</div>
+          <div class="hot-tier" style="color:${col}">${TIER_LABEL[c.tier]} · ${SLOT_LABEL[c.slot]}</div>
         </div>
       </div>
       <div class="hot-fuse"><i style="width:${pct}%"></i></div>
-      <div class="hot-acts">
-        <button class="claim" data-a="claim">CLAIM</button>
-        <button class="shove" data-a="shove">SHOVE</button>
+      <button class="claim hot-claim" data-a="claim">KEEP IT</button>
+      <div class="hot-pass">
+        <button class="shove" data-a="left" ${left ? '' : 'disabled'} aria-label="Pass left to ${nm(left)}">◀ ${nm(left)}</button>
+        <button class="shove" data-a="right" ${right ? '' : 'disabled'} aria-label="Pass right to ${nm(right)}">${nm(right)} ▶</button>
       </div>
+      <div class="hot-up">PASS IT ON → BECOMES <span style="color:${TIER_COLOR[nextTier]}">${TIER_LABEL[nextTier]}</span></div>
     </div>`;
   }).join('');
 
-  bar.querySelectorAll('.hot').forEach(el => {
-    const cid = +el.dataset.cid;
-    el.querySelectorAll('button').forEach(b => {
-      b.onclick = e => {
-        e.preventDefault();
-        if (b.dataset.a === 'claim') {
-          send({ t: 'claim_hot', cid });
-          haptic(22);
-        } else {
-          armShove(cid);
-        }
-      };
+  bars.forEach(bar => {
+    bar.innerHTML = html;
+    bar.querySelectorAll('.hot').forEach(el => {
+      const cid = +el.dataset.cid;
+      el.querySelectorAll('button').forEach(b => {
+        b.onclick = e => {
+          e.preventDefault();
+          if (b.dataset.a === 'claim') {
+            send({ t: 'claim_hot', cid });
+            haptic(22);
+          } else {
+            // the server confirms who got it, with a toast naming them
+            send({ t: 'pass_hot', cid, dir: b.dataset.a });
+            el.classList.add('sending');
+            haptic(30);
+          }
+        };
+      });
     });
   });
 }
@@ -644,20 +874,34 @@ function hotUpdate(m) {
   renderHot();
 }
 
-/** Burn the fuses down locally between server pushes. */
+/**
+ * Burn the fuses down locally between server pushes. Updates the bars in
+ * place instead of re-rendering, so a button is never swapped out from under
+ * a finger mid-tap.
+ */
 function hotTick(dt) {
   if (!HOT.crates.length) return;
-  let redraw = false;
   HOT.crates.forEach(c => {
-    const was = c.left;
     c.left = Math.max(0, c.left - dt);
-    if (Math.ceil(was * 2) !== Math.ceil(c.left * 2)) redraw = true;
+    document.querySelectorAll(`.hot[data-cid="${c.cid}"]`).forEach(el => {
+      const bar = el.querySelector('.hot-fuse i');
+      if (bar) bar.style.width = (Math.max(0, Math.min(1, c.left / 10)) * 100).toFixed(1) + '%';
+      el.classList.toggle('urgent', c.left <= 3.5);
+    });
   });
-  if (redraw) renderHot();
+}
+function escapePartName(s) {
+  return String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 }
 
 function hotBlew(m) {
   if (m.loadout) { FIGHT.loadout = m.loadout.parts; renderJetStrip(); }
+  if (m.harmless) {
+    // arcade crates just get scrapped — nothing comes off your jet
+    toast(`CRATE SCRAPPED — ${m.crate ? m.crate.name : 'PART'} GONE`, 'warn');
+    haptic(30);
+    return;
+  }
   toast(m.lost ? `CRATE BLEW — LOST ${m.lost.name}` : 'CRATE BLEW — NOTHING TO LOSE',
         'bad');
   haptic([50, 70, 50]);

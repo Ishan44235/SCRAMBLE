@@ -9,9 +9,16 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/css/style.css">
-<style>body.arcade { overflow: auto; }</style>
+<style>
+body.arcade { overflow: auto; }
+/* opened inside the host / phone "How to play" window */
+body.embed .rules { padding-top: 18px; }
+body.embed .rules-back, body.embed .crt { display: none; }
+</style>
+<script>if (/[?&]embed=1/.test(location.search)) document.documentElement.classList.add('embed-doc');</script>
 </head>
 <body class="arcade">
+<script>if (document.documentElement.classList.contains('embed-doc')) document.body.classList.add('embed');</script>
 
 <canvas id="sky"></canvas>
 <div class="crt"></div>
@@ -56,10 +63,12 @@
      played by moving the handset.</p>
   <ul>
     <li><b>Tap</b> one of the four answers to submit it.</li>
+    <li><b>Rotate</b> the phone about 50° to install a part you've won.</li>
     <li><b>Slide</b> the upright phone sideways to pass left or right.</li>
     <li><b>Tap</b> the on-screen left/right neighbor as an alternative way to pass.</li>
     <li><b>Keep</b> the phone upright during quiz and passing gestures.</li>
-    <li><b>Bank and pitch</b> to fly in the dogfight. Hold GUNS, tap MISSILE.</li>
+    <li><b>Bank</b> to turn and <b>pitch</b> for throttle in the dogfight. Hold FIRE for guns.</li>
+    <li>In Ring Run and Lock-On, tilt the <b>top of the phone away</b> to move <b>down</b> the screen and <b>toward you</b> to move <b>up</b>, like a flight stick. Prefer it the other way? Tap the <b>⇅</b> switch under the game.</li>
   </ul>
 
   <h2>PASSING, AND WHY IT COSTS YOU</h2>
@@ -72,10 +81,13 @@
   <h2>WHEN IT GOES WRONG</h2>
   <div class="rule-grid">
     <div class="rule-card" style="border-left-color:var(--good)">
-      <div class="rc-t" style="color:var(--good)">3 RIGHT IN A ROW</div>
-      <div class="rc-d">You earn a <b>missile</b>. Fire it at any pilot. They
-        have to tilt their phone to evade — if they fail, they lose their
-        single best part.</div>
+      <div class="rc-t" style="color:var(--good)">ANY 3 RIGHT ANSWERS</div>
+      <div class="rc-d">Load a <b>missile</b>. They don't have to be in a row — wrong
+        answers in between don't reset the count. You hold one missile at a time;
+        push the phone forward (or tap MISSILE) to fire it, and the count starts
+        again from zero.
+        A random pilot has to tilt to evade a missile barrage; if it gets
+        through their shield, they lose their single best part.</div>
     </div>
     <div class="rule-card" style="border-left-color:var(--danger)">
       <div class="rc-t" style="color:var(--danger)">3 WRONG IN A ROW</div>
@@ -84,9 +96,44 @@
     </div>
   </div>
 
+  <h2>ARCADE MODE — NO QUESTIONS</h2>
+  <p>The host can pick <b>ARCADE</b> instead of Trivia or Study. Then the round is
+     a ladder of five-second games, tilt only, and every level you clear earns a
+     jet part. The higher you climb, the harder the games and the rarer the parts.
+     Miss one and you drop a level. Five games take turns:</p>
+  <div class="rule-grid">
+    <div class="rule-card" style="border-left-color:var(--warn)">
+      <div class="rc-t" style="color:var(--warn)">RING RUN</div>
+      <div class="rc-d">Tilt to fly <b>through</b> the gates.</div>
+    </div>
+    <div class="rule-card" style="border-left-color:var(--danger)">
+      <div class="rc-t" style="color:var(--danger)">MISSILE DODGE</div>
+      <div class="rc-d">Tilt to slip <b>away</b> from the incoming missiles.</div>
+    </div>
+    <div class="rule-card" style="border-left-color:#d98a4a">
+      <div class="rc-t" style="color:#d98a4a">CANYON RUN</div>
+      <div class="rc-d">Tilt to stay <b>between</b> the canyon walls. One scrape is forgiven.</div>
+    </div>
+    <div class="rule-card" style="border-left-color:var(--accent)">
+      <div class="rc-t" style="color:var(--accent)">LOCK-ON</div>
+      <div class="rc-d">Tilt <b>onto</b> the bogey and hold him in the reticle.</div>
+    </div>
+    <div class="rule-card" style="border-left-color:var(--good)">
+      <div class="rc-t" style="color:var(--good)">SUPPLY DROP</div>
+      <div class="rc-d">Tilt <b>under</b> the falling crates to catch them. Dodge the bombs.</div>
+    </div>
+  </div>
+  <p>Won a part that's no better than what you have? It arrives as a crate on a
+     fuse. <b>Claim</b> it, or <b>shove</b> it to the pilot on your left or right —
+     it goes up a tier on the way. In arcade a crate that times out is simply
+     scrapped; it never costs you a part.</p>
+
   <h2>YOUR JET</h2>
   <p>Five bays — <b>engine, guns, missiles, wings, armor</b> — and five rarity
-     tiers. Better parts replace worse ones automatically.</p>
+     tiers. When you win a part that beats what's in that bay, <b>rotate the
+     phone about 50°</b> (portrait toward landscape) to bolt it on — in the quiz
+     and in arcade. There's a tap button too if rotating isn't working. In
+     arcade, your next level waits until it's fitted.</p>
   <div class="rule-grid">
     <div class="rule-card" style="border-left-color:#7d879c">
       <div class="rc-t" style="color:#7d879c">COMMON</div>
@@ -110,19 +157,6 @@
         notice the gold on your wings.</div>
     </div>
   </div>
-
-  <h2>CARDS, EVERY 20 SECONDS</h2>
-  <p>Everyone draws at the same time. Half help, half hurt.</p>
-  <ul>
-    <li><b>Mystery Crate</b> — sealed. You find out in the hangar.</li>
-    <li><b>Fifty-Fifty</b> — two wrong answers burn away.</li>
-    <li><b>Tailwind</b> — next correct answer drops as if red hot.</li>
-    <li><b>Deflector</b> — passes aimed at you bounce back, hotter.</li>
-    <li><b>Rust</b> — your best part corrodes down a tier.</li>
-    <li><b>Locked Bay</b> — you can't pass this one. Answer it.</li>
-    <li><b>Hot Hands</b> — you must pass your next two, unanswered.</li>
-    <li><b>Blind Spot</b> — the answers stay hidden for three seconds.</li>
-  </ul>
 
   <h2>SECRET AGENDAS</h2>
   <p>Everyone draws one at the start and nobody is a traitor. Each agenda pushes
@@ -161,9 +195,10 @@
   </div>
 
   <h2>WINNING</h2>
-  <p><b>Final score = dogfight score + agenda bonus.</b> Kills are worth 100,
-     and <b>triple</b> on the Threat. Agendas reveal at the end — which is when
-     everyone works out why you kept dumping questions on them.</p>
+  <p><b>Final score = your quiz or arcade points + dogfight score + agenda bonus.</b>
+     Kills are worth 100, and <b>triple</b> on the Threat. The top three take the
+     <b>podium</b> on the big screen, and everyone's agenda is revealed underneath —
+     which is when the table works out why you kept dumping questions on them.</p>
 
   <a class="rules-back" href="/">← BACK TO THE HANGAR</a>
 </div>
