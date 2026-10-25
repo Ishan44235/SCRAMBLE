@@ -37,6 +37,9 @@ import dogfight as dogfightmod
 # CONFIG
 # ---------------------------------------------------------------------------
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STATIC_DIR = os.path.join(BASE_DIR, "static")
+
 PORT = int(os.environ.get("PORT", 8000))
 
 ROUND_SECONDS = 60
@@ -1421,27 +1424,22 @@ def base_url(request) -> str:
 
 @app.get("/")
 async def home():
-    return FileResponse("static/index.html")
+    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
 
 @app.get("/rules")
 async def rules_page():
-    return FileResponse("static/rules.html")
-
-
-@app.get("/rules")
-async def rules_page():
-    return FileResponse("static/rules.html")
+    return FileResponse(os.path.join(STATIC_DIR, "rules.html"))
 
 
 @app.get("/host")
 async def host_page():
-    return FileResponse("static/host.html")
+    return FileResponse(os.path.join(STATIC_DIR, "host.html"))
 
 
 @app.get("/play")
 async def player_page():
-    return FileResponse("static/player.html")
+    return FileResponse(os.path.join(STATIC_DIR, "player.html"))
 
 
 @app.post("/api/room")
@@ -1648,7 +1646,7 @@ async def ws_endpoint(ws: WebSocket):
                     pass
 
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 if __name__ == "__main__":
